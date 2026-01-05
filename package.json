@@ -1,0 +1,265 @@
+{
+  "name": "pagemd",
+  "displayName": "PageMD",
+  "description": "Markdown to PDF with Paged.js - paged preview and export",
+  "version": "0.1.2",
+  "publisher": "gh4-io",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/gh4-io/pagemd-vscode"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Other",
+    "Formatters"
+  ],
+  "keywords": [
+    "markdown",
+    "pdf",
+    "paged.js",
+    "print",
+    "export"
+  ],
+  "activationEvents": [
+    "onLanguage:markdown"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "pagemd.exportAs",
+        "title": "PageMD: Export Document...",
+        "icon": "$(export)"
+      },
+      {
+        "command": "pagemd.exportPdf",
+        "title": "PageMD: Export to PDF",
+        "icon": "$(file-pdf)"
+      },
+      {
+        "command": "pagemd.openPreview",
+        "title": "PageMD: Open Paged Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "pagemd.selectProfile",
+        "title": "PageMD: Select Profile",
+        "icon": "$(gear)"
+      },
+      {
+        "command": "pagemd.validate",
+        "title": "PageMD: Validate Document",
+        "icon": "$(check)"
+      },
+      {
+        "command": "pagemd.createDocument",
+        "title": "PageMD: Create Document...",
+        "icon": "$(new-file)"
+      },
+      {
+        "command": "pagemd.inspectDocument",
+        "title": "PageMD: Inspect Document",
+        "icon": "$(info)"
+      }
+    ],
+    "configuration": [
+      {
+        "title": "General",
+        "properties": {
+          "pagemd.defaultProfile": {
+            "type": "string",
+            "default": "standard_letter",
+            "description": "Default profile for rendering"
+          },
+          "pagemd.cliPath": {
+            "type": "string",
+            "default": "",
+            "description": "Custom path to pagemd CLI executable. Leave empty to use npx pagemd (auto-detect)"
+          },
+          "pagemd.outputPath": {
+            "type": "string",
+            "default": "",
+            "description": "Custom output directory for generated files (relative to workspace or absolute). Leave empty for default (same directory as source file)"
+          },
+          "pagemd.showOutputPanelOn": {
+            "type": "string",
+            "enum": ["always", "never", "onError"],
+            "default": "onError",
+            "description": "When to show the output panel: always, never, or only on errors"
+          }
+        }
+      },
+      {
+        "title": "Preview",
+        "properties": {
+          "pagemd.autoRefreshPreview": {
+            "type": "boolean",
+            "default": true,
+            "description": "Automatically refresh preview on file changes"
+          },
+          "pagemd.previewTrigger": {
+            "type": "string",
+            "enum": ["onSave", "onType"],
+            "default": "onSave",
+            "description": "When to refresh preview: on save or as you type"
+          }
+        }
+      },
+      {
+        "title": "Preview: Layout",
+        "properties": {
+          "pagemd.preview.emulatePageLayout": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show white pages on gray background for print-accurate preview"
+          },
+          "pagemd.preview.twoColumnSpread": {
+            "type": "boolean",
+            "default": false,
+            "description": "Show pages side-by-side like an open book"
+          },
+          "pagemd.preview.firstPagePosition": {
+            "type": "string",
+            "enum": ["left", "right"],
+            "default": "right",
+            "description": "Position of first page in book spread view (right = typical book layout with recto pages on right)"
+          },
+          "pagemd.preview.pageGap": {
+            "type": "string",
+            "default": "5mm",
+            "description": "Gap between pages in preview"
+          },
+          "pagemd.preview.spreadGap": {
+            "type": "string",
+            "default": "15mm",
+            "description": "Vertical gap between page spreads in two-column book view"
+          },
+          "pagemd.preview.zoom": {
+            "type": "number",
+            "default": 100,
+            "minimum": 25,
+            "maximum": 400,
+            "description": "Preview zoom level (25-400%)"
+          },
+          "pagemd.preview.showDimensions": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show margin and page size dimensions when margin highlighting is enabled"
+          },
+          "pagemd.preview.dimensionUnit": {
+            "type": "string",
+            "enum": ["in", "mm"],
+            "default": "in",
+            "description": "Preferred unit for dimension labels (in or mm)"
+          }
+        }
+      },
+      {
+        "title": "Preview: Appearance",
+        "properties": {
+          "pagemd.preview.paperColor": {
+            "type": "string",
+            "default": "#ffffff",
+            "description": "Page background color"
+          },
+          "pagemd.preview.backgroundColor": {
+            "type": "string",
+            "default": "#777777",
+            "description": "Background color outside pages (simulates desk/table)"
+          },
+          "pagemd.preview.highlightMargins": {
+            "type": "boolean",
+            "default": true,
+            "description": "Show cyan borders around page margin boxes for debugging layout"
+          },
+          "pagemd.preview.marginColor": {
+            "type": "string",
+            "default": "#0ff",
+            "description": "Color for margin box highlighting (CSS color value)"
+          }
+        }
+      },
+      {
+        "title": "Export",
+        "properties": {
+          "pagemd.jpegQuality": {
+            "type": "number",
+            "default": 90,
+            "minimum": 1,
+            "maximum": 100,
+            "description": "JPEG quality for image exports (1-100)"
+          },
+          "pagemd.pdfTimeout": {
+            "type": "number",
+            "default": 60000,
+            "minimum": 5000,
+            "maximum": 300000,
+            "description": "PDF generation timeout in milliseconds (5000-300000)"
+          },
+          "pagemd.pagedJsMode": {
+            "type": "string",
+            "enum": ["browser", "cli"],
+            "default": "browser",
+            "description": "Paged.js execution mode: browser (default, faster) or cli (preprocessor)"
+          },
+          "pagemd.headless": {
+            "type": "boolean",
+            "default": true,
+            "description": "Run browser in headless mode (disable for debugging browser rendering)"
+          },
+          "pagemd.debugMode": {
+            "type": "boolean",
+            "default": false,
+            "description": "Enable debug artifacts and verbose logging"
+          }
+        }
+      }
+    ],
+    "menus": {
+      "editor/title": [
+        {
+          "when": "resourceLangId == markdown",
+          "command": "pagemd.openPreview",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceLangId == markdown",
+          "command": "pagemd.exportAs",
+          "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "when": "resourceLangId == markdown",
+          "command": "pagemd.exportAs",
+          "group": "navigation"
+        }
+      ]
+    }
+  },
+  "scripts": {
+    "bundle": "node esbuild.config.js",
+    "bundle:watch": "node esbuild.config.js --watch",
+    "bundle:prod": "node esbuild.config.js --production",
+    "bundle-cli": "node scripts/bundle-cli.js",
+    "vscode:prepublish": "npm run bundle-cli && cd bin && npm install --omit=dev && cd .. && node scripts/link-workspace-pkgs.js && npm run bundle:prod",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./",
+    "typecheck": "tsc --noEmit",
+    "package": "vsce package",
+    "lint": "eslint src --ext ts"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.22.0",
+    "esbuild": "^0.27.2",
+    "typescript": "^5.3.0"
+  },
+  "dependencies": {
+    "pagedjs": "^0.4.3"
+  }
+}

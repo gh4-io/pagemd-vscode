@@ -1,0 +1,163 @@
+# =============================================================================
+# VS Code Extension Ignore File
+# Files/folders listed here are EXCLUDED from the packaged .vsix extension
+# Use ! prefix to explicitly INCLUDE files that would otherwise be ignored
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Source Files (bundled into out/)
+# -----------------------------------------------------------------------------
+src/**
+**/*.ts
+**/*.tsx
+!**/*.d.ts
+
+# -----------------------------------------------------------------------------
+# TypeScript / Build Config
+# -----------------------------------------------------------------------------
+tsconfig.json
+tsconfig.*.json
+*.tsbuildinfo
+esbuild.config.js
+esbuild.config.mjs
+webpack.config.js
+rollup.config.js
+vite.config.*
+
+# -----------------------------------------------------------------------------
+# Linting / Formatting Config
+# -----------------------------------------------------------------------------
+.eslintrc*
+.eslintignore
+eslint.config.*
+.prettierrc*
+.prettierignore
+.editorconfig
+.stylelintrc*
+biome.json
+
+# -----------------------------------------------------------------------------
+# Dependencies (bundled into out/)
+# -----------------------------------------------------------------------------
+node_modules/**
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnp.*
+.yarn/**
+
+# -----------------------------------------------------------------------------
+# IDE / Editor
+# -----------------------------------------------------------------------------
+.vscode/**
+!.vscode/extensions.json
+.idea/**
+*.iml
+*.code-workspace
+
+# -----------------------------------------------------------------------------
+# Git
+# -----------------------------------------------------------------------------
+.git/**
+.gitignore
+.gitattributes
+.github/**
+
+# -----------------------------------------------------------------------------
+# Documentation (wiki hosted on GitHub, not in VSIX)
+# -----------------------------------------------------------------------------
+docs/**
+*.md
+!README.md
+!CHANGELOG.md
+!LICENSE.md
+!LICENSE
+
+# -----------------------------------------------------------------------------
+# Dev Scripts & Tooling
+# -----------------------------------------------------------------------------
+scripts/**
+tools/**
+.husky/**
+.lefthook/**
+commitlint.config.*
+
+# -----------------------------------------------------------------------------
+# Test Files
+# -----------------------------------------------------------------------------
+**/*.test.ts
+**/*.test.js
+**/*.spec.ts
+**/*.spec.js
+**/test/**
+**/tests/**
+**/__tests__/**
+**/__mocks__/**
+**/fixtures/**
+coverage/**
+.nyc_output/**
+vitest.config.*
+jest.config.*
+*.lcov
+
+# -----------------------------------------------------------------------------
+# Dev Artifacts & Caches
+# -----------------------------------------------------------------------------
+*.vsix
+*.tgz
+dist/**
+build/**
+.tmp/**
+.cache/**
+.turbo/**
+.parcel-cache/**
+*.log
+npm-debug.log*
+
+# -----------------------------------------------------------------------------
+# OS Files
+# -----------------------------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# -----------------------------------------------------------------------------
+# AI/LLM Tooling
+# -----------------------------------------------------------------------------
+.claude/**
+.serena/**
+.cursor/**
+.gemini/**
+*.promptlog
+*.aicontext
+
+# -----------------------------------------------------------------------------
+# EXPLICIT INCLUDES (override ignores above)
+# -----------------------------------------------------------------------------
+# Bundled CLI binary
+!bin/**
+
+# Prune unnecessary files from bin/ to reduce VSIX size
+bin/**/test/**
+bin/**/tests/**
+bin/**/*.test.js
+bin/**/*.spec.js
+bin/**/*.md
+bin/**/README*
+bin/**/CHANGELOG*
+bin/**/LICENSE*
+bin/**/docs/**
+bin/**/.github/**
+bin/**/examples/**
+bin/**/*.map
+bin/**/*.ts
+bin/**/*.d.ts
+
+# Extension output (required)
+!out/**
+
+# Media assets (icons, images)
+!media/**
+
+# Type definitions if needed
+!*.d.ts
