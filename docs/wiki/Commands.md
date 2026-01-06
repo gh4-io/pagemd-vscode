@@ -11,6 +11,7 @@ Complete reference for all PageMD VS Code extension commands.
 - [Preview Commands](#preview-commands)
 - [Profile Commands](#profile-commands)
 - [Document Commands](#document-commands)
+- [Session State Commands](#session-state-commands)
 - [Menu Integration](#menu-integration)
 
 ---
@@ -26,6 +27,9 @@ Complete reference for all PageMD VS Code extension commands.
 | `pagemd.validate` | Validate Document | Run validation checks |
 | `pagemd.inspectDocument` | Inspect Document | Show resolved config |
 | `pagemd.createDocument` | Create Document... | Create from template |
+| `pagemd.selectFormats` | Select Output Formats | Pick formats for session |
+| `pagemd.setOutputPath` | Set Output Path | Set output directory for session |
+| `pagemd.resetSessionOverrides` | Reset Session Overrides | Clear all session state |
 
 ---
 
@@ -211,6 +215,84 @@ Create a new document from a template.
 | Document | Markdown file with frontmatter |
 | Profile | JSON profile manifest |
 | Project | Folder structure with defaults |
+
+---
+
+## Session State Commands
+
+Commands for managing temporary session overrides. These affect the current VS Code session only and do not modify persistent settings.
+
+### PageMD: Select Output Formats
+
+**Command ID:** `pagemd.selectFormats`
+**Keyboard:** None (assign in Keyboard Shortcuts)
+
+Open a multi-select picker to choose output formats for the session.
+
+**Usage:**
+
+1. `Ctrl+Shift+P` → "PageMD: Select Output Formats"
+2. Select one or more formats (multi-select enabled)
+3. Confirm selection
+
+**Available formats:**
+
+| Format | Description |
+|--------|-------------|
+| PDF | Print-ready document |
+| HTML | Standalone web page |
+| PNG | Raster image (lossless) |
+| JPEG | Raster image (compressed) |
+
+**Behavior:**
+
+- Overrides `pagemd.outputFormats` setting for current session
+- Status bar shows format indicator when session override is active (e.g., `standard_letter | PDF,HTML`)
+- Use **Reset Session Overrides** to clear
+
+---
+
+### PageMD: Set Output Path
+
+**Command ID:** `pagemd.setOutputPath`
+**Keyboard:** None (assign in Keyboard Shortcuts)
+
+Set a custom output directory for the current session.
+
+**Usage:**
+
+1. `Ctrl+Shift+P` → "PageMD: Set Output Path"
+2. Enter directory path (absolute or relative to workspace)
+3. Leave empty to use source file directory
+
+**Behavior:**
+
+- Overrides `pagemd.outputPath` setting for current session
+- Relative paths resolve from workspace root
+- Use **Reset Session Overrides** to clear
+
+---
+
+### PageMD: Reset Session Overrides
+
+**Command ID:** `pagemd.resetSessionOverrides`
+**Keyboard:** None (assign in Keyboard Shortcuts)
+
+Clear all session state and revert to settings defaults.
+
+**Usage:**
+
+1. `Ctrl+Shift+P` → "PageMD: Reset Session Overrides"
+
+**What gets reset:**
+
+| State | Reverts To |
+|-------|------------|
+| Profile selection | `pagemd.defaultProfile` setting |
+| Output formats | `pagemd.outputFormats` setting |
+| Output path | `pagemd.outputPath` setting |
+
+**Note:** This does NOT modify your persistent settings (settings.json). It only clears temporary session overrides stored in workspace state.
 
 ---
 

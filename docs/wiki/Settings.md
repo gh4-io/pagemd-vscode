@@ -10,6 +10,7 @@ Complete reference for all PageMD VS Code extension settings.
 - [Preview](#preview)
 - [Preview: Layout](#preview-layout)
 - [Preview: Appearance](#preview-appearance)
+- [Rendering](#rendering)
 - [Export](#export)
 
 ---
@@ -284,6 +285,114 @@ Color for margin box highlighting.
 
 ---
 
+## Rendering
+
+Settings that affect how the CLI renders documents. These map directly to CLI environment variables.
+
+**Design principle:** All extension defaults match CLI defaults. When settings are at their defaults, no environment variables are passed, allowing frontmatter and profiles to take full control.
+
+### pagemd.outputFormats
+
+**Type:** `array`
+**Default:** `["html", "pdf"]`
+**Valid values:** `"html"`, `"pdf"`, `"png"`, `"jpeg"`
+
+Default output formats for export commands. Multiple formats can be selected.
+
+```json
+"pagemd.outputFormats": ["pdf", "html"]
+```
+
+Use the **PageMD: Select Output Formats** command to temporarily override this setting for the current session.
+
+---
+
+### pagemd.syntaxHighlight
+
+**Type:** `boolean`
+**Default:** `true`
+
+Enable syntax highlighting for code blocks using shiki.
+
+```json
+"pagemd.syntaxHighlight": true
+```
+
+Disable to reduce rendering time for documents without code blocks. Maps to `PAGEMD_SYNTAX_HIGHLIGHT` env var.
+
+---
+
+### pagemd.mermaidDiagrams
+
+**Type:** `boolean`
+**Default:** `true`
+
+Enable Mermaid diagram rendering for ` ```mermaid ` code blocks.
+
+```json
+"pagemd.mermaidDiagrams": true
+```
+
+Disable if you don't use Mermaid diagrams or want faster rendering. Maps to `PAGEMD_MERMAID` env var.
+
+---
+
+### pagemd.logLevel
+
+**Type:** `string`
+**Default:** `"WARN"`
+**Options:** `"TRACE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, `"FATAL"`, `"OFF"`
+
+CLI logging verbosity level.
+
+| Level | Description |
+|-------|-------------|
+| `TRACE` | Everything including internal details |
+| `DEBUG` | Diagnostic information |
+| `INFO` | General operational messages |
+| `WARN` | Warnings (default) |
+| `ERROR` | Errors only |
+| `FATAL` | Critical failures only |
+| `OFF` | No logging |
+
+```json
+"pagemd.logLevel": "DEBUG"
+```
+
+Maps to `PAGEMD_LOG_LEVEL` env var.
+
+---
+
+### pagemd.browserPath
+
+**Type:** `string`
+**Default:** `""` (auto-detect)
+
+Custom path to Chrome or Chromium executable for PDF rendering.
+
+```json
+"pagemd.browserPath": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"
+```
+
+Leave empty to use automatic detection (recommended). Maps to `PAGEMD_BROWSER_PATH` env var.
+
+---
+
+### pagemd.keepBrowserAlive
+
+**Type:** `boolean`
+**Default:** `false`
+
+Keep the browser instance alive between renders for faster repeated exports.
+
+```json
+"pagemd.keepBrowserAlive": true
+```
+
+**Note:** Enabling this uses more memory but significantly speeds up consecutive exports. Maps to `PAGEMD_KEEP_CHROME` env var.
+
+---
+
 ## Export
 
 ### pagemd.jpegQuality
@@ -303,13 +412,13 @@ JPEG quality for image exports.
 ### pagemd.pdfTimeout
 
 **Type:** `number` (milliseconds)
-**Default:** `60000`
+**Default:** `30000`
 **Range:** `5000` - `300000`
 
-PDF generation timeout. Increase for large or complex documents.
+PDF generation timeout (matches CLI default: 30 seconds). Increase for large or complex documents.
 
 ```json
-"pagemd.pdfTimeout": 120000
+"pagemd.pdfTimeout": 60000
 ```
 
 ---
@@ -387,8 +496,14 @@ Enable debug artifacts and verbose logging. When enabled:
 | `pagemd.preview.backgroundColor` | string | `"#777777"` | Preview: Appearance |
 | `pagemd.preview.highlightMargins` | boolean | `true` | Preview: Appearance |
 | `pagemd.preview.marginColor` | string | `"#0ff"` | Preview: Appearance |
+| `pagemd.outputFormats` | array | `["html", "pdf"]` | Rendering |
+| `pagemd.syntaxHighlight` | boolean | `true` | Rendering |
+| `pagemd.mermaidDiagrams` | boolean | `true` | Rendering |
+| `pagemd.logLevel` | string | `"WARN"` | Rendering |
+| `pagemd.browserPath` | string | `""` | Rendering |
+| `pagemd.keepBrowserAlive` | boolean | `false` | Rendering |
 | `pagemd.jpegQuality` | number | `90` | Export |
-| `pagemd.pdfTimeout` | number | `60000` | Export |
+| `pagemd.pdfTimeout` | number | `30000` | Export |
 | `pagemd.pagedJsMode` | string | `"browser"` | Export |
 | `pagemd.headless` | boolean | `true` | Export |
 | `pagemd.debugMode` | boolean | `false` | Export |

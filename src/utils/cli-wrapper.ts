@@ -23,6 +23,7 @@ export interface CliConfig {
   timeout?: number;
   token?: vscode.CancellationToken;
   outputChannel?: vscode.OutputChannel;
+  env?: Record<string, string>;
 }
 
 /**
@@ -89,6 +90,57 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
 }
 
 /**
+ * Build environment variables object from VS Code settings.
+ *
+ * DESIGN PRINCIPLE: Only pass env vars when settings differ from CLI defaults.
+ * When all settings are at defaults, this returns empty object, so CLI runs
+ * with its defaults and frontmatter/profile can take full control.
+ *
+ * CLI Defaults Reference:
+ * - PAGEMD_LOG_LEVEL: 'WARN'
+ * - PAGEMD_SYNTAX_HIGHLIGHT: true (enabled)
+ * - PAGEMD_MERMAID: true (enabled)
+ * - PAGEMD_BROWSER_PATH: null (auto-detect)
+ * - PAGEMD_KEEP_CHROME: false (disabled)
+ */
+export function buildCliEnv(): Record<string, string> {
+  const config = vscode.workspace.getConfiguration('pagemd');
+  const env: Record<string, string> = {};
+
+  // Log level - only pass if not default 'WARN'
+  const logLevel = config.get<string>('logLevel', 'WARN');
+  if (logLevel !== 'WARN') {
+    env.PAGEMD_LOG_LEVEL = logLevel;
+  }
+
+  // Syntax highlighting - only pass if disabled (default is true/enabled)
+  const syntaxHighlight = config.get<boolean>('syntaxHighlight', true);
+  if (!syntaxHighlight) {
+    env.PAGEMD_SYNTAX_HIGHLIGHT = '0';
+  }
+
+  // Mermaid diagrams - only pass if disabled (default is true/enabled)
+  const mermaidDiagrams = config.get<boolean>('mermaidDiagrams', true);
+  if (!mermaidDiagrams) {
+    env.PAGEMD_MERMAID = '0';
+  }
+
+  // Browser path - only pass if set (default is empty/auto-detect)
+  const browserPath = config.get<string>('browserPath', '');
+  if (browserPath) {
+    env.PAGEMD_BROWSER_PATH = browserPath;
+  }
+
+  // Keep browser alive - only pass if enabled (default is false)
+  const keepBrowserAlive = config.get<boolean>('keepBrowserAlive', false);
+  if (keepBrowserAlive) {
+    env.PAGEMD_KEEP_CHROME = '1';
+  }
+
+  return env;
+}
+
+/**
  * Run the PageMD CLI with the given arguments.
  *
  * Uses subprocess spawning (Phase 1 architecture).
@@ -96,7 +148,7 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
  * Supports timeout and VS Code CancellationToken.
  */
 export function runPageMD(config: CliConfig): Promise<CliResult> {
-  const { args, cwd, timeout = 30000, token, outputChannel } = config;
+  const { args, cwd, timeout = 30000, token, outputChannel, env: customEnv } = config;
 
   return new Promise((resolve, reject) => {
     let stdout = '';
@@ -108,16 +160,26 @@ export function runPageMD(config: CliConfig): Promise<CliResult> {
     const { command, prependArgs } = resolveCliPath(outputChannel);
     const fullArgs = [...prependArgs, ...args];
 
+    // Merge custom env vars with process env
+    // Custom env vars only contain non-default values (see buildCliEnv)
+    const mergedEnv = customEnv && Object.keys(customEnv).length > 0
+      ? { ...process.env, ...customEnv }
+      : process.env;
+
     const options: SpawnOptions = {
       cwd,
       shell: true,
       detached: os.platform() !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
+      env: mergedEnv,
     };
 
     // Log the full command being executed
     outputChannel?.appendLine(`[PageMD] Executing: ${command} ${fullArgs.join(' ')}`);
     outputChannel?.appendLine(`[PageMD] CWD: ${cwd}`);
+    if (customEnv && Object.keys(customEnv).length > 0) {
+      outputChannel?.appendLine(`[PageMD] Custom env: ${JSON.stringify(customEnv)}`);
+    }
 
     try {
       child = spawn(command, fullArgs, options);

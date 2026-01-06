@@ -63,6 +63,21 @@
         "command": "pagemd.inspectDocument",
         "title": "PageMD: Inspect Document",
         "icon": "$(info)"
+      },
+      {
+        "command": "pagemd.selectFormats",
+        "title": "PageMD: Select Output Formats",
+        "icon": "$(file-media)"
+      },
+      {
+        "command": "pagemd.setOutputPath",
+        "title": "PageMD: Set Output Path",
+        "icon": "$(folder)"
+      },
+      {
+        "command": "pagemd.resetSessionOverrides",
+        "title": "PageMD: Reset Session Overrides",
+        "icon": "$(clear-all)"
       }
     ],
     "configuration": [
@@ -183,6 +198,47 @@
         }
       },
       {
+        "title": "Rendering",
+        "properties": {
+          "pagemd.outputFormats": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": ["html", "pdf", "png", "jpeg"]
+            },
+            "default": ["html", "pdf"],
+            "uniqueItems": true,
+            "description": "Default output formats for export commands (matches CLI default)"
+          },
+          "pagemd.syntaxHighlight": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable syntax highlighting for code blocks (shiki)"
+          },
+          "pagemd.mermaidDiagrams": {
+            "type": "boolean",
+            "default": true,
+            "description": "Enable Mermaid diagram rendering"
+          },
+          "pagemd.logLevel": {
+            "type": "string",
+            "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL", "OFF"],
+            "default": "WARN",
+            "description": "CLI logging verbosity level"
+          },
+          "pagemd.browserPath": {
+            "type": "string",
+            "default": "",
+            "description": "Custom Chrome/Chromium path for PDF rendering. Leave empty for auto-detection."
+          },
+          "pagemd.keepBrowserAlive": {
+            "type": "boolean",
+            "default": false,
+            "description": "Keep browser instance alive between renders for faster consecutive exports"
+          }
+        }
+      },
+      {
         "title": "Export",
         "properties": {
           "pagemd.jpegQuality": {
@@ -194,10 +250,10 @@
           },
           "pagemd.pdfTimeout": {
             "type": "number",
-            "default": 60000,
+            "default": 30000,
             "minimum": 5000,
             "maximum": 300000,
-            "description": "PDF generation timeout in milliseconds (5000-300000)"
+            "description": "PDF generation timeout in milliseconds (matches CLI default: 30000)"
           },
           "pagemd.pagedJsMode": {
             "type": "string",

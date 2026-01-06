@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { ProfileState, showProfilePicker } from '../providers/profile-picker';
+import { FormatState } from '../providers/format-state';
 
 /**
  * Select profile command handler.
@@ -11,7 +12,8 @@ import { ProfileState, showProfilePicker } from '../providers/profile-picker';
 export async function selectProfile(
   profileState: ProfileState,
   statusBarItem: vscode.StatusBarItem,
-  outputChannel: vscode.OutputChannel
+  outputChannel: vscode.OutputChannel,
+  formatState?: FormatState
 ): Promise<void> {
   // Determine working directory
   const cwd = getWorkingDirectory();
@@ -39,7 +41,7 @@ export async function selectProfile(
   await profileState.setSelectedProfile(selected.id);
 
   // Update status bar
-  updateStatusBar(statusBarItem, selected.id);
+  updateStatusBar(statusBarItem, selected.id, formatState);
 
   // Show confirmation
   outputChannel.appendLine(`[PageMD] Profile changed: ${currentProfile} → ${selected.id}`);
@@ -66,11 +68,27 @@ function getWorkingDirectory(): string | undefined {
 }
 
 /**
- * Update status bar item with profile name.
+ * Update status bar item with profile name and format override indicator.
  */
-export function updateStatusBar(statusBarItem: vscode.StatusBarItem, profileId: string): void {
-  statusBarItem.text = `$(gear) ${profileId}`;
-  statusBarItem.tooltip = `PageMD Profile: ${profileId}\nClick to change`;
+export function updateStatusBar(
+  statusBarItem: vscode.StatusBarItem,
+  profileId: string,
+  formatState?: FormatState
+): void {
+  let text = `$(gear) ${profileId}`;
+  let tooltip = `Profile: ${profileId}`;
+
+  // Show format override indicator if session override is set
+  if (formatState?.hasSessionOverride()) {
+    const formats = formatState.getSelectedFormats();
+    text += ` | ${formats.map(f => f.toUpperCase()).join(',')}`;
+    tooltip += `\nFormats: ${formats.join(', ')} (session override)`;
+  }
+
+  tooltip += '\nClick to change profile';
+
+  statusBarItem.text = text;
+  statusBarItem.tooltip = tooltip;
 }
 
 /**

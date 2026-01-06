@@ -18,6 +18,8 @@ import {
 import { createDocument as createDocumentCmd } from './commands/create-document';
 import { inspectDocument as inspectDocumentCmd } from './commands/inspect';
 import { ProfileState } from './providers/profile-picker';
+import { FormatState, showFormatPicker } from './providers/format-state';
+import { OutputPathState } from './providers/output-path-state';
 
 /**
  * PageMD VS Code Extension
@@ -29,6 +31,8 @@ import { ProfileState } from './providers/profile-picker';
 // Shared state
 let outputChannel: vscode.OutputChannel;
 let profileState: ProfileState;
+let formatState: FormatState;
+let outputPathState: OutputPathState;
 let statusBarItem: vscode.StatusBarItem;
 let diagnostics: vscode.DiagnosticCollection;
 
@@ -46,8 +50,10 @@ export function activate(context: vscode.ExtensionContext): void {
   // Check for Chrome installation (soft warning if not found)
   checkChromeInstallation();
 
-  // Initialize profile state
+  // Initialize state providers
   profileState = new ProfileState(context);
+  formatState = new FormatState(context);
+  outputPathState = new OutputPathState(context);
 
   // Create diagnostics collection
   diagnostics = vscode.languages.createDiagnosticCollection('pagemd');
@@ -57,12 +63,12 @@ export function activate(context: vscode.ExtensionContext): void {
   // Create status bar item
   statusBarItem = createStatusBarItem();
   context.subscriptions.push(statusBarItem);
-  updateStatusBar(statusBarItem, profileState.getSelectedProfile());
+  updateStatusBar(statusBarItem, profileState.getSelectedProfile(), formatState);
 
   // Register commands
   const commands = [
     vscode.commands.registerCommand('pagemd.exportAs', () =>
-      exportAsCmd(outputChannel, profileState)
+      exportAsCmd(outputChannel, profileState, formatState, outputPathState)
     ),
     vscode.commands.registerCommand('pagemd.exportPdf', () =>
       exportPdf(outputChannel, profileState)
@@ -71,7 +77,7 @@ export function activate(context: vscode.ExtensionContext): void {
       openPreviewCmd(context, outputChannel, profileState)
     ),
     vscode.commands.registerCommand('pagemd.selectProfile', () =>
-      selectProfileCmd(profileState, statusBarItem, outputChannel)
+      selectProfileCmd(profileState, statusBarItem, outputChannel, formatState)
     ),
     vscode.commands.registerCommand('pagemd.validate', () =>
       validateDocumentCmd(outputChannel, profileState, diagnostics)
@@ -82,11 +88,43 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('pagemd.inspectDocument', () =>
       inspectDocumentCmd(outputChannel, profileState)
     ),
+    // New commands for session state management
+    vscode.commands.registerCommand('pagemd.selectFormats', async () => {
+      const selected = await showFormatPicker(formatState.getSelectedFormats());
+      if (selected) {
+        await formatState.setSelectedFormats(selected);
+        updateStatusBar(statusBarItem, profileState.getSelectedProfile(), formatState);
+        vscode.window.showInformationMessage(
+          `PageMD: Output formats set to ${selected.map(f => f.toUpperCase()).join(', ')}`
+        );
+      }
+    }),
+    vscode.commands.registerCommand('pagemd.setOutputPath', async () => {
+      const current = outputPathState.getOutputPath();
+      const result = await vscode.window.showInputBox({
+        prompt: 'Output directory (leave empty for source directory)',
+        value: current,
+        placeHolder: '/path/to/output or leave empty',
+      });
+      if (result !== undefined) {
+        await outputPathState.setOutputPath(result);
+        vscode.window.showInformationMessage(
+          result ? `PageMD: Output path set to ${result}` : 'PageMD: Using source directory for output'
+        );
+      }
+    }),
+    vscode.commands.registerCommand('pagemd.resetSessionOverrides', async () => {
+      await profileState.clearSelection();
+      await formatState.clearSelection();
+      await outputPathState.clearSelection();
+      updateStatusBar(statusBarItem, profileState.getSelectedProfile(), formatState);
+      vscode.window.showInformationMessage('PageMD: Session overrides cleared - using settings defaults');
+    }),
   ];
 
   context.subscriptions.push(...commands);
 
-  log('Commands registered: exportAs, exportPdf, openPreview, selectProfile, validate, createDocument, inspectDocument');
+  log('Commands registered: exportAs, exportPdf, openPreview, selectProfile, validate, createDocument, inspectDocument, selectFormats, setOutputPath, resetSessionOverrides');
 }
 
 /**

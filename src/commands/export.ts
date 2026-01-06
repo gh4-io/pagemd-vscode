@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { runPageMD, CliResult } from '../utils/cli-wrapper';
+import { runPageMD, CliResult, buildCliEnv } from '../utils/cli-wrapper';
 import { ProfileState } from '../providers/profile-picker';
+import { FormatState } from '../providers/format-state';
+import { OutputPathState } from '../providers/output-path-state';
 
 /**
  * Export format definition for QuickPick
@@ -50,7 +52,9 @@ export const EXPORT_FORMATS: ExportFormat[] = [
  */
 export async function exportAs(
   outputChannel: vscode.OutputChannel,
-  profileState: ProfileState
+  profileState: ProfileState,
+  formatState?: FormatState,
+  outputPathState?: OutputPathState
 ): Promise<void> {
   // Get active editor
   const editor = vscode.window.activeTextEditor;
@@ -97,7 +101,8 @@ export async function exportAs(
     document,
     selectedFormat.format,
     outputChannel,
-    profileState
+    profileState,
+    outputPathState
   );
 }
 
@@ -110,7 +115,8 @@ export async function exportDocument(
   document: vscode.TextDocument,
   format: ExportFormat,
   outputChannel: vscode.OutputChannel,
-  profileState: ProfileState
+  profileState: ProfileState,
+  outputPathState?: OutputPathState
 ): Promise<void> {
   const filePath = document.uri.fsPath;
   const fileName = path.basename(filePath);
@@ -120,12 +126,18 @@ export async function exportDocument(
   const profile = profileState.getSelectedProfile();
   const config = vscode.workspace.getConfiguration('pagemd');
   const debugMode = config.get<boolean>('debugMode', false);
-  const outputPath = config.get<string>('outputPath', '');
   const showOutputPanelOn = config.get<string>('showOutputPanelOn', 'onError');
   const jpegQuality = config.get<number>('jpegQuality', 90);
-  const pdfTimeout = config.get<number>('pdfTimeout', 60000);
+  const pdfTimeout = config.get<number>('pdfTimeout', 30000); // CLI default: 30000
   const headless = config.get<boolean>('headless', true);
   const pagedJsMode = config.get<string>('pagedJsMode', 'browser');
+
+  // Get output path from state (respects session override) or setting
+  const outputPath = outputPathState?.getOutputPath()
+    ?? config.get<string>('outputPath', '');
+
+  // Build environment variables from settings (only non-default values)
+  const cliEnv = buildCliEnv();
 
   // Build CLI arguments
   const args = ['build', filePath, '-o', format.id, '-p', profile];
@@ -171,6 +183,7 @@ export async function exportDocument(
           timeout: pdfTimeout,
           token,
           outputChannel,
+          env: cliEnv,
         });
       }
     );
