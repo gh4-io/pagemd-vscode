@@ -48,7 +48,8 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
   const extensionRoot = isTscBuild
     ? path.resolve(__dirname, '..', '..')  // out/utils/ → extension root
     : path.resolve(__dirname, '..');       // out/ → extension root
-  const bundledCliPath = path.resolve(extensionRoot, 'bin', 'apps', 'cli', 'src', 'index.js');
+  // New esbuild single-file bundle
+  const bundledCliPath = path.resolve(extensionRoot, 'bin', 'pagemd-cli.mjs');
 
   if (fs.existsSync(bundledCliPath)) {
     outputChannel?.appendLine(`[PageMD] Using bundled CLI: ${bundledCliPath}`);

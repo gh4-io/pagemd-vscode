@@ -10,6 +10,7 @@ Common issues and solutions for the PageMD VS Code extension.
   - [CLI Not Found](#cli-not-found)
   - [Wrong CLI Version](#wrong-cli-version)
   - [CLI Falls Back to npx](#cli-falls-back-to-npx-developer-issue)
+  - [Bundled CLI Can't Find Profiles](#bundled-cli-cant-find-profiles-developer-issue)
 - [Preview Issues](#preview-issues)
   - [Preview is Blank](#preview-is-blank)
   - [Preview Shows Raw HTML](#preview-shows-raw-html)
@@ -139,6 +140,42 @@ or for F5 development:
 ```
 [PageMD] Using local CLI: /path/to/pagemd/apps/cli/src/index.js
 ```
+
+---
+
+### Bundled CLI Can't Find Profiles (Developer Issue)
+
+**Symptom:** Extension preview fails with "Profile not found: standard_letter"
+
+**Log output:**
+```
+level=WARN;msg="Profiles not found at expected location";data={"expected":"...\.vscode\\profiles","derived":"...\.vscode"}
+```
+
+**Root Cause:**
+
+The bundled CLI's `getPackageRootFromCli()` function assumed running from `apps/cli/src/` structure. The esbuild bundle places CLI in `bin/` with resources alongside it.
+
+| Mode | Resources Location |
+|------|--------------------|
+| Source | 3 levels up from CLI (`apps/cli/src/` → `project/`) |
+| Bundled | Same directory as CLI (`bin/profiles/`, `bin/templates/`, etc.) |
+
+**Fix Location:** `@pagemd/core/path-resolver.js` - `getPackageRootFromCli()` function
+
+The function now auto-detects bundled mode by checking if `profiles/` exists at the same level as `__dirname`.
+
+**After Fixing:** Rebuild and repackage:
+
+```bash
+cd pagemd-vscode
+npm run bundle-cli:prod
+cd bin && npm install && cd ..
+npm run bundle:prod
+npm run package
+```
+
+**Note:** This is separate from the "CLI Falls Back to npx" issue above. That issue is about the extension finding the CLI; this issue is about the CLI finding its own resources.
 
 ---
 

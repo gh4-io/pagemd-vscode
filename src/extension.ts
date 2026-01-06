@@ -1,4 +1,8 @@
 import * as vscode from 'vscode';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
+import { execSync } from 'child_process';
 import { exportPdf } from './commands/export-pdf';
 import { exportAs as exportAsCmd } from './commands/export';
 import { openPreview as openPreviewCmd } from './commands/preview';
@@ -38,6 +42,9 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(outputChannel);
 
   log('PageMD extension activated');
+
+  // Check for Chrome installation (soft warning if not found)
+  checkChromeInstallation();
 
   // Initialize profile state
   profileState = new ProfileState(context);
@@ -96,4 +103,78 @@ export function deactivate(): void {
 function log(message: string): void {
   const timestamp = new Date().toISOString();
   outputChannel.appendLine(`[${timestamp}] ${message}`);
+}
+
+/**
+ * Detect if Chrome/Chromium is installed on the system.
+ * Returns path to Chrome executable or null if not found.
+ */
+function detectChrome(): string | null {
+  const platform = os.platform();
+  const chromePaths: string[] = [];
+
+  if (platform === 'win32') {
+    chromePaths.push(
+      'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+      'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+      path.join(process.env.LOCALAPPDATA || '', 'Google\\Chrome\\Application\\chrome.exe'),
+      path.join(process.env.PROGRAMFILES || '', 'Google\\Chrome\\Application\\chrome.exe'),
+    );
+  } else if (platform === 'darwin') {
+    chromePaths.push(
+      '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+      path.join(os.homedir(), 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
+    );
+  } else if (platform === 'linux') {
+    // Try 'which' command first
+    try {
+      const result = execSync('which google-chrome || which google-chrome-stable || which chromium || which chromium-browser', {
+        encoding: 'utf8',
+        stdio: ['pipe', 'pipe', 'ignore'],
+      }).trim();
+      if (result) {
+        return result;
+      }
+    } catch {
+      // 'which' failed, try static paths
+    }
+    chromePaths.push(
+      '/usr/bin/google-chrome',
+      '/usr/bin/google-chrome-stable',
+      '/usr/bin/chromium',
+      '/usr/bin/chromium-browser',
+      '/snap/bin/chromium',
+    );
+  }
+
+  for (const chromePath of chromePaths) {
+    if (chromePath && fs.existsSync(chromePath)) {
+      return chromePath;
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Check for Chrome on activation and show soft warning if not found.
+ * PDF generation will still fail with a clear error, but this gives users a heads-up.
+ */
+function checkChromeInstallation(): void {
+  const chromePath = detectChrome();
+
+  if (!chromePath) {
+    log('Chrome/Chromium not detected on system');
+    vscode.window.showInformationMessage(
+      'PageMD: Chrome not detected. PDF generation requires Chrome or Chromium.',
+      'Learn More',
+      'Dismiss'
+    ).then(selection => {
+      if (selection === 'Learn More') {
+        vscode.env.openExternal(vscode.Uri.parse('https://www.google.com/chrome/'));
+      }
+    });
+  } else {
+    log(`Chrome detected: ${chromePath}`);
+  }
 }
