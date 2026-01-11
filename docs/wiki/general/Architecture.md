@@ -198,6 +198,41 @@ The wrapper searches for the CLI in this order:
 | Inspect | `pagemd inspect <file> --json` |
 | List profiles | `pagemd list profiles --json` |
 
+### Message Extraction (Temporary)
+
+**Current Implementation:**
+
+The extension uses `cli-message-extractor.ts` to extract clean, user-friendly messages from CLI stdout/stderr for popup notifications.
+
+**How it works:**
+
+```typescript
+// CLI output contains both logger format AND user-friendly markers:
+// [ERROR] [CLI] [build] failure: ...
+// ✗ Failed: duplicated mapping key at line 78
+
+// Extractor finds the clean message:
+const message = extractCleanMessage(stderr, stdout);
+// Returns: "duplicated mapping key at line 78"
+```
+
+**Extraction priority:**
+
+1. `✗ Failed: <message>` in stderr (errors)
+2. `✓ Success: <message>` in stdout (success)
+3. `Error: <message>` pattern (fallback)
+4. "Unknown error" (last resort)
+
+**Full details preserved:**
+
+All CLI output (timestamps, log metadata, JSON objects) remains in the Output panel. Users click "Show Output" button to see complete diagnostic information.
+
+**Future Direction:**
+
+This is a **temporary bridge solution**. When the extension migrates from thin-client subprocess spawning to direct API imports, `cli-message-extractor.ts` will be removed and replaced with structured error objects from `@pagemd/core` packages.
+
+See CLAUDE.md > Next Work > Extension Architecture Migration for migration details.
+
 ---
 
 ## Preview Panel

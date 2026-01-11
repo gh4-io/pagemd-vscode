@@ -2,7 +2,7 @@
   "name": "pagemd",
   "displayName": "PageMD",
   "description": "Markdown to PDF with Paged.js - paged preview and export",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "publisher": "gh4-io",
   "license": "MIT",
   "repository": {
@@ -40,8 +40,18 @@
         "icon": "$(file-pdf)"
       },
       {
+        "command": "pagemd.exportAll",
+        "title": "PageMD: Export All Formats",
+        "icon": "$(files)"
+      },
+      {
         "command": "pagemd.openPreview",
         "title": "PageMD: Open Paged Preview",
+        "icon": "$(open-preview)"
+      },
+      {
+        "command": "pagemd.openPreviewToSide",
+        "title": "PageMD: Open Paged Preview to the Side",
         "icon": "$(open-preview)"
       },
       {
@@ -58,6 +68,11 @@
         "command": "pagemd.createDocument",
         "title": "PageMD: Create Document...",
         "icon": "$(new-file)"
+      },
+      {
+        "command": "pagemd.init",
+        "title": "PageMD: Initialize",
+        "icon": "$(new-folder)"
       },
       {
         "command": "pagemd.inspectDocument",
@@ -78,6 +93,16 @@
         "command": "pagemd.resetSessionOverrides",
         "title": "PageMD: Reset Session Overrides",
         "icon": "$(clear-all)"
+      },
+      {
+        "command": "pagemd.refreshPreview",
+        "title": "Refresh Preview",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "pagemd.openDevTools",
+        "title": "Open DevTools",
+        "icon": "$(debug)"
       }
     ],
     "configuration": [
@@ -86,8 +111,8 @@
         "properties": {
           "pagemd.defaultProfile": {
             "type": "string",
-            "default": "standard_letter",
-            "description": "Default profile for rendering"
+            "default": "",
+            "description": "Default profile for rendering (blank = use frontmatter or CLI default)"
           },
           "pagemd.cliPath": {
             "type": "string",
@@ -102,6 +127,7 @@
           "pagemd.showOutputPanelOn": {
             "type": "string",
             "enum": ["always", "never", "onError"],
+            "enumItemLabels": ["Always", "Never", "On Error"],
             "default": "onError",
             "description": "When to show the output panel: always, never, or only on errors"
           }
@@ -110,16 +136,12 @@
       {
         "title": "Preview",
         "properties": {
-          "pagemd.autoRefreshPreview": {
-            "type": "boolean",
-            "default": true,
-            "description": "Automatically refresh preview on file changes"
-          },
-          "pagemd.previewTrigger": {
+          "pagemd.previewRefresh": {
             "type": "string",
-            "enum": ["onSave", "onType"],
-            "default": "onSave",
-            "description": "When to refresh preview: on save or as you type"
+            "enum": ["manual", "onSave", "live"],
+            "enumItemLabels": ["Manual", "On Save", "Live"],
+            "default": "manual",
+            "markdownDescription": "When to refresh the preview panel:"
           }
         }
       },
@@ -144,13 +166,13 @@
           },
           "pagemd.preview.pageGap": {
             "type": "string",
-            "default": "5mm",
-            "description": "Gap between pages in preview"
+            "default": "",
+            "description": "Vertical gap between page rows (default: 5mm)"
           },
           "pagemd.preview.spreadGap": {
             "type": "string",
-            "default": "15mm",
-            "description": "Vertical gap between page spreads in two-column book view"
+            "default": "",
+            "description": "Horizontal gap between pages in book spread view (default: 5mm)"
           },
           "pagemd.preview.zoom": {
             "type": "number",
@@ -161,7 +183,7 @@
           },
           "pagemd.preview.showDimensions": {
             "type": "boolean",
-            "default": true,
+            "default": false,
             "description": "Show margin and page size dimensions when margin highlighting is enabled"
           },
           "pagemd.preview.dimensionUnit": {
@@ -187,13 +209,27 @@
           },
           "pagemd.preview.highlightMargins": {
             "type": "boolean",
-            "default": true,
+            "default": false,
             "description": "Show cyan borders around page margin boxes for debugging layout"
           },
           "pagemd.preview.marginColor": {
             "type": "string",
             "default": "#0ff",
             "description": "Color for margin box highlighting (CSS color value)"
+          },
+          "pagemd.preview.debugLevel": {
+            "type": "string",
+            "enum": ["", "basic", "layout", "context", "combined", "full"],
+            "default": "",
+            "enumDescriptions": [
+              "No debug visuals (default)",
+              "Container outlines, page gaps, spread gaps, scroll spacers",
+              "Basic + margins, bleeds, page content area, footnote area, running headers/footers",
+              "Semantic elements (article, section, aside, figure, blockquote, nav, header, footer) with labeled boxes",
+              "Layout + Context combined",
+              "All debug visualizations"
+            ],
+            "description": "Preview panel debug visualization level"
           }
         }
       },
@@ -219,12 +255,6 @@
             "type": "boolean",
             "default": true,
             "description": "Enable Mermaid diagram rendering"
-          },
-          "pagemd.logLevel": {
-            "type": "string",
-            "enum": ["TRACE", "DEBUG", "INFO", "WARN", "ERROR", "FATAL", "OFF"],
-            "default": "WARN",
-            "description": "CLI logging verbosity level"
           },
           "pagemd.browserPath": {
             "type": "string",
@@ -255,6 +285,13 @@
             "maximum": 300000,
             "description": "PDF generation timeout in milliseconds (matches CLI default: 30000)"
           },
+          "pagemd.previewTimeout": {
+            "type": "number",
+            "default": 30000,
+            "minimum": 5000,
+            "maximum": 300000,
+            "description": "Preview generation timeout in milliseconds (5000-300000)"
+          },
           "pagemd.pagedJsMode": {
             "type": "string",
             "enum": ["browser", "cli"],
@@ -266,25 +303,61 @@
             "default": true,
             "description": "Run browser in headless mode (disable for debugging browser rendering)"
           },
-          "pagemd.debugMode": {
-            "type": "boolean",
-            "default": false,
-            "description": "Enable debug artifacts and verbose logging"
+          "pagemd.cliLogLevel": {
+            "type": "string",
+            "enum": ["", "FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"],
+            "default": "",
+            "enumDescriptions": [
+              "Disabled (production default)",
+              "Only fatal errors",
+              "Errors and fatal",
+              "Warnings and above",
+              "Informational messages and above",
+              "Detailed debug info and above",
+              "All trace logs including verbose details"
+            ],
+            "description": "CLI subprocess logging level. Controls PageMD CLI output in PageMD output channel."
+          },
+          "pagemd.extensionLogLevel": {
+            "type": "string",
+            "enum": ["", "FATAL", "ERROR", "WARN", "INFO", "DEBUG", "TRACE"],
+            "default": "INFO",
+            "enumDescriptions": [
+              "Disabled",
+              "Only fatal errors",
+              "Errors and fatal",
+              "Warnings and above",
+              "Informational messages and above (default)",
+              "Detailed debug info and above",
+              "All trace logs including verbose details"
+            ],
+            "description": "Extension internal logging level. Controls extension diagnostics in PageMD output channel."
           }
         }
       }
     ],
     "menus": {
+      "commandPalette": [
+        {
+          "command": "pagemd.openPreviewToSide",
+          "when": "false"
+        }
+      ],
       "editor/title": [
         {
           "when": "resourceLangId == markdown",
-          "command": "pagemd.openPreview",
+          "command": "pagemd.openPreviewToSide",
           "group": "navigation"
         },
         {
           "when": "resourceLangId == markdown",
           "command": "pagemd.exportAs",
           "group": "navigation"
+        },
+        {
+          "command": "pagemd.refreshPreview",
+          "when": "activeWebviewPanelId == 'pagemd.preview'",
+          "group": "1_modification"
         }
       ],
       "explorer/context": [
@@ -292,6 +365,33 @@
           "when": "resourceLangId == markdown",
           "command": "pagemd.exportAs",
           "group": "navigation"
+        },
+        {
+          "when": "explorerResourceIsFolder",
+          "command": "pagemd.init",
+          "group": "navigation"
+        }
+      ],
+      "webview/title": [
+        {
+          "command": "pagemd.openDevTools",
+          "when": "activeWebviewPanelId == 'pagemd.preview'",
+          "group": "navigation"
+        },
+        {
+          "command": "pagemd.refreshPreview",
+          "when": "activeWebviewPanelId == 'pagemd.preview'",
+          "group": "navigation"
+        }
+      ],
+      "webview/context": [
+        {
+          "command": "pagemd.refreshPreview",
+          "when": "webviewId == 'pagemd.preview'"
+        },
+        {
+          "command": "pagemd.openDevTools",
+          "when": "webviewId == 'pagemd.preview'"
         }
       ]
     }
@@ -303,18 +403,19 @@
     "bundle-cli": "node scripts/bundle-cli-esbuild.js",
     "bundle-cli:prod": "node scripts/bundle-cli-esbuild.js --production",
     "vscode:prepublish": "npm run bundle-cli:prod && cd bin && npm install --omit=dev && cd .. && npm run bundle:prod",
-    "compile": "tsc -p ./",
-    "watch": "tsc -watch -p ./",
-    "typecheck": "tsc --noEmit",
+    "compile": "npx tsc -p ./",
+    "watch": "npx tsc -watch -p ./",
+    "typecheck": "npx tsc --noEmit",
+    "test": "node src/test/zoom-math.test.js && node src/test/preview-logic.test.js",
     "package": "vsce package",
     "lint": "eslint src --ext ts"
   },
   "devDependencies": {
     "@types/node": "^20.0.0",
     "@types/vscode": "^1.85.0",
-    "@vscode/vsce": "^2.22.0",
+    "@vscode/vsce": "^3.7.1",
     "esbuild": "^0.27.2",
-    "typescript": "^5.3.0"
+    "typescript": "^5.7.3"
   },
   "dependencies": {
     "pagedjs": "^0.4.3"

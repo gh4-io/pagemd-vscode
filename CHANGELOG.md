@@ -2,6 +2,33 @@
 
 All notable changes to the PageMD VS Code extension will be documented in this file.
 
+## [0.1.3] - 2026-01-07
+
+### Added
+
+- **Unsaved Document Preview** - Preview untitled and dirty documents without saving
+  - Uses `--stdin` to pipe content directly to CLI
+  - No temporary files created (stdin → stdout for HTML)
+  - Works with both new untitled files and modified saved files
+
+- **Live Preview Mode** - True real-time preview as you type
+  - New `pagemd.previewRefresh` setting with `live` option
+  - No disk I/O during live updates (uses stdin)
+  - Preserves undo/redo history and dirty state
+  - 500ms debounce for performance
+
+### Changed
+
+- **BREAKING:** Consolidated `pagemd.autoRefreshPreview` and `pagemd.previewTrigger` into single `pagemd.previewRefresh` setting
+  - Old: `autoRefreshPreview: true` + `previewTrigger: "onSave"`
+  - New: `previewRefresh: "onSave"`
+  - Options: `manual` (default), `onSave`, `live`
+  - Default changed from auto-refresh to manual
+
+### Fixed
+
+- **Split window preview** - No longer requires saving before preview (was blocking unsaved docs)
+
 ## [0.1.2] - 2026-01-02
 
 ### Added

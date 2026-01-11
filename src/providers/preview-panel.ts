@@ -1,8 +1,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { getNonce, getCspMetaTag, getThemeClass, getWebviewUri } from '../utils/webview-utils';
-import { runPageMD } from '../utils/cli-wrapper';
+import { runPageMD, buildCliEnv } from '../utils/cli-wrapper';
+import { extractCleanMessage } from '../utils/cli-message-extractor';
 import { ProfileState } from './profile-picker';
+import { log, logStructured } from '../extension';
 
 /**
  * Manages the paged preview webview panel.
@@ -19,6 +21,7 @@ export class PreviewPanel {
   private documentUri: vscode.Uri | undefined;
   private disposables: vscode.Disposable[] = [];
   private debounceTimer: NodeJS.Timeout | undefined;
+  private isRefreshing = false;
 
   private constructor(
     panel: vscode.WebviewPanel,
@@ -39,12 +42,10 @@ export class PreviewPanel {
       (message) => {
         switch (message.type) {
           case 'rendered':
-            this.outputChannel.appendLine(
-              `[PageMD] Preview rendered: ${message.pageCount} pages`
-            );
+            log(`Preview rendered: ${message.pageCount} pages`);
             break;
           case 'ready':
-            this.outputChannel.appendLine('[PageMD] Preview ready');
+            log('Preview ready');
             break;
         }
       },
@@ -73,17 +74,20 @@ export class PreviewPanel {
 
   /**
    * Create or reveal the preview panel.
+   * @param extensionUri - Extension URI for resource loading
+   * @param outputChannel - Output channel for logging
+   * @param profileState - Profile state provider
+   * @param viewColumn - Where to show the panel (default: Active = same tab)
    */
   public static createOrShow(
     extensionUri: vscode.Uri,
     outputChannel: vscode.OutputChannel,
-    profileState: ProfileState
+    profileState: ProfileState,
+    viewColumn: vscode.ViewColumn = vscode.ViewColumn.Active
   ): PreviewPanel {
-    const column = vscode.ViewColumn.Beside;
-
-    // If panel exists, reveal it
+    // If panel exists, reveal it in the specified column
     if (PreviewPanel.currentPanel) {
-      PreviewPanel.currentPanel.panel.reveal(column);
+      PreviewPanel.currentPanel.panel.reveal(viewColumn);
       return PreviewPanel.currentPanel;
     }
 
@@ -91,7 +95,7 @@ export class PreviewPanel {
     const panel = vscode.window.createWebviewPanel(
       PreviewPanel.viewType,
       'PageMD Preview',
-      column,
+      viewColumn,
       {
         enableScripts: true,
         retainContextWhenHidden: true,
@@ -110,34 +114,36 @@ export class PreviewPanel {
   }
 
   /**
-   * Set up document watching based on trigger mode.
+   * Set up document watching based on refresh mode.
    * Called once when preview opens - registers event listeners.
    */
   public setupDocumentWatching(context: vscode.ExtensionContext): void {
     const config = vscode.workspace.getConfiguration('pagemd');
-    const autoRefresh = config.get<boolean>('autoRefreshPreview', true);
+    const refreshMode = config.get<string>('previewRefresh', 'manual');
 
-    if (!autoRefresh) {
-      this.outputChannel.appendLine('[PageMD] Auto-refresh disabled');
+    log(`Preview refresh mode: ${refreshMode}`);
+
+    if (refreshMode === 'manual') {
+      // No auto-refresh - user must manually refresh via command
       return;
     }
 
-    // Always listen for saves - works for both onSave and onType modes
-    vscode.workspace.onDidSaveTextDocument(
-      (doc) => {
-        if (this.isWatchedDocument(doc.uri)) {
-          this.outputChannel.appendLine('[PageMD] Document saved, refreshing preview');
-          this.refresh();
-        }
-      },
-      null,
-      this.disposables
-    );
+    if (refreshMode === 'onSave' || refreshMode === 'live') {
+      // Both modes listen for saves
+      vscode.workspace.onDidSaveTextDocument(
+        (doc) => {
+          if (this.isWatchedDocument(doc.uri)) {
+            logStructured('DEBUG', 'preview', 'refresh', 'info', 'Document saved, refreshing preview');
+            this.refresh();
+          }
+        },
+        null,
+        this.disposables
+      );
+    }
 
-    // For onType mode, also listen for changes (will auto-save before refresh)
-    const trigger = config.get<string>('previewTrigger', 'onSave');
-    if (trigger === 'onType') {
-      this.outputChannel.appendLine('[PageMD] onType mode enabled');
+    if (refreshMode === 'live') {
+      // Live mode also listens for text changes (uses stdin, no disk I/O)
       vscode.workspace.onDidChangeTextDocument(
         (e) => {
           if (this.isWatchedDocument(e.document.uri)) {
@@ -147,8 +153,6 @@ export class PreviewPanel {
         null,
         this.disposables
       );
-    } else {
-      this.outputChannel.appendLine('[PageMD] onSave mode enabled');
     }
   }
 
@@ -167,28 +171,15 @@ export class PreviewPanel {
   }
 
   /**
-   * Debounced refresh for onType mode.
-   * Auto-saves the document before refresh since CLI reads from disk.
+   * Debounced refresh for live mode.
+   * Uses stdin to pipe content directly - no disk I/O required.
    */
   private debouncedRefresh(): void {
     if (this.debounceTimer) {
       clearTimeout(this.debounceTimer);
     }
-    this.debounceTimer = setTimeout(async () => {
-      // Auto-save before refresh - CLI reads from disk
-      if (this.documentUri) {
-        const doc = vscode.workspace.textDocuments.find(
-          d => this.isWatchedDocument(d.uri)
-        );
-        if (doc?.isDirty) {
-          this.outputChannel.appendLine('[PageMD] Auto-saving for onType refresh');
-          await doc.save();
-          // Note: The save will trigger onDidSaveTextDocument which calls refresh()
-          // so we don't need to call refresh() here
-          return;
-        }
-      }
-      // If document wasn't dirty, refresh directly
+    this.debounceTimer = setTimeout(() => {
+      // refresh() uses stdin for dirty/untitled docs - no save needed
       this.refresh();
     }, 500); // 500ms debounce
   }
@@ -206,94 +197,209 @@ export class PreviewPanel {
    * Refresh the preview content.
    */
   public async refresh(): Promise<void> {
+    // Prevent concurrent refreshes (race condition guard)
+    if (this.isRefreshing) {
+      logStructured('DEBUG', 'preview', 'refresh', 'skip', 'Refresh already in progress');
+      return;
+    }
+
     if (!this.documentUri) {
       return;
     }
 
-    const filePath = this.documentUri.fsPath;
-    const cwd = path.dirname(filePath);
-    const profile = this.profileState.getSelectedProfile();
-
-    this.outputChannel.appendLine(`[PageMD] Refreshing preview: ${path.basename(filePath)}`);
-    this.outputChannel.appendLine(`[PageMD] Working directory: ${cwd}`);
-    this.outputChannel.appendLine(`[PageMD] Profile: ${profile}`);
+    this.isRefreshing = true;
 
     try {
-      // Generate HTML via CLI
-      const result = await runPageMD({
-        args: ['build', filePath, '-o', 'html', '-p', profile],
-        cwd,
-        timeout: 30000,
-        outputChannel: this.outputChannel,
-      });
+      const filePath = this.documentUri.fsPath;
+      const profile = this.profileState.getSelectedProfile();
 
-      this.outputChannel.appendLine(`[PageMD] CLI exit code: ${result.code}`);
+      // Read configurable timeout (M3)
+      const config = vscode.workspace.getConfiguration('pagemd');
+      const timeout = config.get<number>('previewTimeout', 30000);
 
-      if (result.code !== 0) {
-        this.outputChannel.appendLine(`[PageMD] CLI stderr: ${result.stderr}`);
-        this.showError(`Build failed (code ${result.code}): ${result.stderr || result.stdout || 'Unknown error'}`);
-        return;
+      // Check if document is untitled or has unsaved changes
+      const doc = vscode.workspace.textDocuments.find(
+        d => d.uri.toString() === this.documentUri?.toString()
+      );
+      const useStdin = doc?.isUntitled || doc?.isDirty;
+
+      // Determine working directory:
+      // - For saved files: use file's directory
+      // - For untitled: use workspace folder or fallback to home
+      let cwd: string;
+      if (doc?.isUntitled) {
+        cwd = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || require('os').homedir();
+      } else {
+        cwd = path.dirname(filePath);
       }
 
-      // Read the generated HTML file
-      const htmlPath = filePath.replace(/\.md$/, '.html');
-      const htmlUri = vscode.Uri.file(htmlPath);
+      const displayName = doc?.isUntitled ? 'Untitled' : path.basename(filePath);
+      log(`Refreshing preview: ${displayName}`);
+      logStructured('DEBUG', 'preview', 'refresh', 'info', 'Working directory', { cwd });
+      logStructured('DEBUG', 'preview', 'refresh', 'info', 'Profile', { profile: profile || '(default)' });
+      logStructured('DEBUG', 'preview', 'refresh', 'info', 'Mode', { mode: useStdin ? 'stdin (unsaved)' : 'file' });
 
-      this.outputChannel.appendLine(`[PageMD] Looking for HTML at: ${htmlPath}`);
-      this.outputChannel.appendLine(`[PageMD] CLI stdout: ${result.stdout.substring(0, 500)}${result.stdout.length > 500 ? '...' : ''}`);
+      let html: string;
 
-      try {
-        const htmlContent = await vscode.workspace.fs.readFile(htmlUri);
-        const html = new TextDecoder().decode(htmlContent);
-        this.outputChannel.appendLine(`[PageMD] HTML file loaded: ${html.length} bytes`);
+      if (useStdin && doc) {
+        // STDIN MODE: Pipe document content directly, get HTML from stdout
+        const content = doc.getText();
+        logStructured('DEBUG', 'preview', 'stdin', 'info', 'Document content', { bytes: content.length });
 
-        // Log body content extraction for debugging
-        const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
-        this.outputChannel.appendLine(`[PageMD] Body extracted: ${bodyMatch ? 'yes' : 'no'} (${bodyMatch?.[1]?.length || 0} chars)`);
-
-        if (html.length < 100) {
-          this.outputChannel.appendLine(`[PageMD] WARNING: HTML file very small. Content: ${html}`);
+        const args = ['build', '--stdin', '--stdout', '-o', 'html'];
+        // Pass markdown file path for correct path resolution (e.g., relative profile paths)
+        if (!doc.isUntitled) {
+          args.push('--stdin-path', filePath);
         }
+        if (profile) {
+          args.push('-p', profile);
+        }
+        const result = await runPageMD({
+          args,
+          cwd,
+          timeout,
+          outputChannel: this.outputChannel,
+          env: buildCliEnv(),
+          stdin: content,
+          suppressStdout: true,  // Don't log HTML to output channel
+        });
 
-        if (!bodyMatch || bodyMatch[1].trim().length === 0) {
-          this.outputChannel.appendLine('[PageMD] WARNING: No body content found in HTML');
-          this.showError('Generated HTML has no body content.\n\nCLI output:\n' + result.stdout);
+        // Check if panel was disposed during async operation
+        if (!this.panel.visible) {
+          logStructured('DEBUG', 'preview', 'refresh', 'abort', 'Panel disposed during refresh');
           return;
         }
 
-        this.renderHtml(html);
+        logStructured('INFO', 'preview', 'cli', result.code === 0 ? 'success' : 'fail', 'CLI exit', { code: result.code });
 
-        // Clean up generated HTML file (unless debug mode is on)
-        const debugMode = vscode.workspace.getConfiguration('pagemd').get<boolean>('debugMode', false);
-        if (!debugMode) {
-          try {
-            await vscode.workspace.fs.delete(htmlUri);
-            this.outputChannel.appendLine(`[PageMD] Cleaned up temporary HTML file`);
-          } catch {
-            // Ignore cleanup errors - file may already be deleted or locked
-          }
-        } else {
-          this.outputChannel.appendLine(`[PageMD] Debug mode: keeping HTML file at ${htmlPath}`);
+        if (result.code !== 0) {
+          logStructured('ERROR', 'preview', 'cli', 'fail', 'CLI stderr', { stderr: result.stderr });
+          const cleanMessage = extractCleanMessage(result.stderr, result.stdout);
+          this.showError(cleanMessage);
+          vscode.window.showErrorMessage(`PageMD: ${cleanMessage}`, 'Show Output')
+            .then(action => {
+              if (action === 'Show Output') {
+                this.outputChannel.show();
+              }
+            });
+          return;
         }
-      } catch (readErr) {
-        this.outputChannel.appendLine(`[PageMD] HTML read error: ${readErr}`);
 
-        // List files in directory to help debug
+        // HTML comes directly from stdout
+        html = result.stdout;
+        logStructured('DEBUG', 'preview', 'stdin', 'info', 'HTML from stdout', { bytes: html.length });
+      } else {
+        // FILE MODE: Existing flow - CLI writes HTML file, we read it
+        const fileArgs = ['build', filePath, '-o', 'html'];
+        if (profile) {
+          fileArgs.push('-p', profile);
+        }
+        // Only suppress stdout when CLI logging is disabled
+        // When cliLogLevel is set, user wants to see CLI logs (which go to stdout)
+        const cliLogLevel = vscode.workspace.getConfiguration('pagemd').get<string>('cliLogLevel', '');
+        const result = await runPageMD({
+          args: fileArgs,
+          cwd,
+          timeout,
+          outputChannel: this.outputChannel,
+          env: buildCliEnv(),
+          suppressStdout: !cliLogLevel,  // Only suppress when CLI logging disabled (empty string)
+        });
+
+        // Check if panel was disposed during async operation
+        if (!this.panel.visible) {
+          logStructured('DEBUG', 'preview', 'refresh', 'abort', 'Panel disposed during refresh');
+          return;
+        }
+
+        logStructured('INFO', 'preview', 'cli', result.code === 0 ? 'success' : 'fail', 'CLI exit', { code: result.code });
+
+        if (result.code !== 0) {
+          logStructured('ERROR', 'preview', 'cli', 'fail', 'CLI stderr', { stderr: result.stderr });
+          const cleanMessage = extractCleanMessage(result.stderr, result.stdout);
+          this.showError(cleanMessage);
+          vscode.window.showErrorMessage(`PageMD: ${cleanMessage}`, 'Show Output')
+            .then(action => {
+              if (action === 'Show Output') {
+                this.outputChannel.show();
+              }
+            });
+          return;
+        }
+
+        // Read the generated HTML file
+        const htmlPath = filePath.replace(/\.md$/, '.html');
+        const htmlUri = vscode.Uri.file(htmlPath);
+
+        logStructured('DEBUG', 'preview', 'file-mode', 'info', 'Looking for HTML', { path: htmlPath });
+        if (result.stdout) {
+          logStructured('DEBUG', 'preview', 'file-mode', 'info', 'CLI output', {
+            output: result.stdout.substring(0, 500) + (result.stdout.length > 500 ? '...' : '')
+          });
+        }
+
         try {
-          const dirUri = vscode.Uri.file(cwd);
-          const files = await vscode.workspace.fs.readDirectory(dirUri);
-          const htmlFiles = files.filter(([name]) => name.endsWith('.html')).map(([name]) => name);
-          this.outputChannel.appendLine(`[PageMD] HTML files in dir: ${htmlFiles.join(', ') || 'none'}`);
-        } catch {
-          // Ignore directory listing errors
-        }
+          const htmlContent = await vscode.workspace.fs.readFile(htmlUri);
+          html = new TextDecoder().decode(htmlContent);
+          logStructured('DEBUG', 'preview', 'file-mode', 'info', 'HTML file loaded', { bytes: html.length });
 
-        this.showError(`HTML file not found. Build may have failed.\nExpected: ${htmlPath}\n\nCLI output:\n${result.stdout || result.stderr || 'No output'}`);
+          // Clean up generated HTML file (unless debug mode is on)
+          const debugMode = config.get<boolean>('debugMode', false);
+          if (!debugMode) {
+            try {
+              await vscode.workspace.fs.delete(htmlUri);
+              logStructured('DEBUG', 'preview', 'file-mode', 'info', 'Cleaned up temporary HTML file');
+            } catch {
+              // Ignore cleanup errors - file may already be deleted or locked
+            }
+          } else {
+            logStructured('DEBUG', 'preview', 'file-mode', 'info', 'Debug mode: keeping HTML file', { path: htmlPath });
+          }
+        } catch (readErr) {
+          logStructured('ERROR', 'preview', 'file-mode', 'fail', 'HTML read error', { error: String(readErr) });
+
+          // List files in directory to help debug
+          try {
+            const dirUri = vscode.Uri.file(cwd);
+            const files = await vscode.workspace.fs.readDirectory(dirUri);
+            const htmlFiles = files.filter(([name]) => name.endsWith('.html')).map(([name]) => name);
+            logStructured('DEBUG', 'preview', 'file-mode', 'info', 'HTML files in directory', { files: htmlFiles });
+          } catch {
+            // Ignore directory listing errors
+          }
+
+          this.showError(`HTML file not found. Build may have failed.\nExpected: ${htmlPath}\n\nCLI output:\n${result.stdout || result.stderr || 'No output'}`);
+          return;
+        }
       }
+
+      // Validate HTML content
+      const bodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+      logStructured('TRACE', 'preview', 'extract', 'info', 'Body extracted', {
+        success: !!bodyMatch,
+        chars: bodyMatch ? bodyMatch[1].length : 0
+      });
+
+      if (html.length < 100) {
+        logStructured('WARN', 'preview', 'extract', 'warn', 'HTML very small', { content: html });
+      }
+
+      if (!bodyMatch || bodyMatch[1].trim().length === 0) {
+        logStructured('WARN', 'preview', 'extract', 'warn', 'No body content found in HTML');
+        this.showError('Generated HTML has no body content.');
+        return;
+      }
+
+      this.renderHtml(html);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      this.outputChannel.appendLine(`[PageMD] Error: ${message}`);
-      this.showError(message);
+      logStructured('ERROR', 'preview', 'refresh', 'fail', 'Error during refresh', { error: message });
+      // Only show error if panel still visible
+      if (this.panel.visible) {
+        this.showError(message);
+      }
+    } finally {
+      this.isRefreshing = false;
     }
   }
 
@@ -312,97 +418,64 @@ export class PreviewPanel {
   }
 
   /**
-   * Get inline CSS for zoom toolbar (avoiding external file issues).
+   * Get webview URI for zoom toolbar script.
    */
-  private getZoomToolbarCss(): string {
-    return `
-    .pagemd-zoom-toolbar {
-      position: absolute;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 12px;
-      background: var(--vscode-editor-background, #1e1e1e);
-      border: 1px solid var(--vscode-panel-border, #3c3c3c);
-      border-radius: 6px;
-      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-      z-index: 2147483647;
-      font-family: var(--vscode-font-family, system-ui);
-      font-size: 13px;
-      pointer-events: auto;
-    }
-    .pagemd-zoom-toolbar button {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      width: 28px;
-      height: 28px;
-      padding: 0;
-      border: none;
-      border-radius: 4px;
-      background: var(--vscode-button-secondaryBackground, #3c3c3c);
-      color: var(--vscode-button-secondaryForeground, #fff);
-      cursor: pointer;
-      font-size: 16px;
-      font-weight: bold;
-    }
-    .pagemd-zoom-toolbar button:hover {
-      background: var(--vscode-button-secondaryHoverBackground, #505050);
-    }
-    .pagemd-zoom-toolbar button:active {
-      background: var(--vscode-button-background, #0e639c);
-    }
-    .pagemd-zoom-toolbar .zoom-level {
-      min-width: 48px;
-      text-align: center;
-      color: var(--vscode-foreground, #ccc);
-      font-variant-numeric: tabular-nums;
-    }
-    .pagemd-zoom-toolbar .zoom-separator {
-      width: 1px;
-      height: 20px;
-      background: var(--vscode-panel-border, #3c3c3c);
-      margin: 0 4px;
-    }
-    .pagemd-zoom-toolbar button.fit-btn {
-      width: auto;
-      padding: 0 10px;
-      font-size: 11px;
-      font-weight: normal;
-    }
-    .pagemd-zoom-toolbar button.mode-btn {
-      font-size: 16px;
-    }
-    .pagemd-zoom-toolbar button.mode-btn[disabled] {
-      opacity: 0.4;
-      cursor: not-allowed;
-    }
-    .pagemd-zoom-toolbar button.mode-btn.active {
-      background: var(--vscode-button-background, #0e639c);
-      color: var(--vscode-button-foreground, #fff);
-    }`;
+  private getZoomToolbarUri(): vscode.Uri {
+    return getWebviewUri(this.panel.webview, this.extensionUri, ['media', 'zoom-toolbar.js']);
   }
 
   /**
-   * Generate preview CSS based on VS Code settings.
-   * Injects CSS variables and conditional style rules.
+   * Get stylesheet URIs based on current settings.
+   */
+  private getStylesheetLinks(nonce: string): string {
+    const mediaPath = vscode.Uri.joinPath(this.extensionUri, 'media', 'styles');
+    const webview = this.panel.webview;
+
+    // Always include base and toolbar
+    const stylesheets: vscode.Uri[] = [
+      vscode.Uri.joinPath(mediaPath, 'preview-base.css'),
+      vscode.Uri.joinPath(mediaPath, 'preview-toolbar.css'),
+    ];
+
+    // Conditional stylesheets based on settings
+    const config = vscode.workspace.getConfiguration('pagemd');
+
+    if (config.get('preview.emulatePageLayout', true)) {
+      stylesheets.push(vscode.Uri.joinPath(mediaPath, 'preview-layout.css'));
+    }
+
+    if (config.get('preview.showDimensions', true)) {
+      stylesheets.push(vscode.Uri.joinPath(mediaPath, 'preview-dimensions.css'));
+    }
+
+    const debugLevel = config.get<string>('preview.debugLevel', '');
+    if (debugLevel) {
+      stylesheets.push(vscode.Uri.joinPath(mediaPath, 'preview-debug.css'));
+    }
+
+    if (config.get('preview.twoColumnSpread', false)) {
+      stylesheets.push(vscode.Uri.joinPath(mediaPath, 'preview-book.css'));
+    }
+
+    return stylesheets
+      .map(uri => `<link rel="stylesheet" href="${webview.asWebviewUri(uri)}">`)
+      .join('\n    ');
+  }
+
+  /**
+   * Generate CSS variables for preview based on VS Code settings.
+   * External CSS files use these variables for styling.
    */
   private getPreviewStyles(): string {
     const config = vscode.workspace.getConfiguration('pagemd');
-    const highlightMargins = config.get<boolean>('preview.highlightMargins', true);
-    const emulateLayout = config.get<boolean>('preview.emulatePageLayout', true);
-    const twoColumn = config.get<boolean>('preview.twoColumnSpread', false);
-    const firstPagePosition = config.get<string>('preview.firstPagePosition', 'right');
-    const showDimensions = config.get<boolean>('preview.showDimensions', true);
     const marginColor = config.get<string>('preview.marginColor', '#0ff');
     const paperColor = config.get<string>('preview.paperColor', '#ffffff');
     const bgColor = config.get<string>('preview.backgroundColor', '#777777');
-    const pageGap = config.get<string>('preview.pageGap', '5mm');
-    const spreadGap = config.get<string>('preview.spreadGap', '15mm');
+    const pageGap = config.get<string>('preview.pageGap', '') || '5mm';
+    const spreadGap = config.get<string>('preview.spreadGap', '') || '5mm';
     const zoom = config.get<number>('preview.zoom', 100);
 
-    // CSS variables root
-    let css = `:root {
+    return `:root {
       --pagemd-margin-color: ${marginColor};
       --pagemd-paper-color: ${paperColor};
       --pagemd-bg-color: ${bgColor};
@@ -411,180 +484,6 @@ export class PreviewPanel {
       --pagemd-font-color: #000;
       --pagemd-zoom: ${zoom / 100};
     }`;
-
-    // Highlight margins CSS
-    if (highlightMargins) {
-      css += `
-      .pagedjs_page { box-shadow: 0 0.5mm 2mm #000; }
-      [class*="pagedjs_margin-top"],
-      [class*="pagedjs_margin-left"],
-      [class*="pagedjs_margin-right"],
-      [class*="pagedjs_margin-bottom"] {
-        box-shadow: 0 0 0 1px inset var(--pagemd-margin-color);
-      }`;
-    }
-
-    // Page layout emulation CSS
-    if (emulateLayout) {
-      css += `
-      .pagedjs_pages {
-        background-color: var(--pagemd-bg-color);
-        padding: 20px;
-        /* Center pages horizontally in single-column mode */
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-      }
-      .pagedjs_page {
-        color: var(--pagemd-font-color);
-        background-color: var(--pagemd-paper-color);
-        margin: var(--pagemd-page-gap);
-      }
-      .pagedjs_page hr {
-        border-color: var(--pagemd-font-color);
-      }`;
-    }
-
-    // Two-column spread CSS (book view) - uses CSS Grid for reliable layout
-    if (twoColumn) {
-      css += `
-      /* Two-column book spread - CSS Grid layout */
-      .pagedjs_pages {
-        display: grid;
-        grid-template-columns: repeat(2, auto);
-        column-gap: var(--pagemd-page-gap);
-        row-gap: var(--pagemd-spread-gap);
-        justify-content: center;
-        width: fit-content;
-        margin: 0 auto;
-        padding: 20px;
-      }
-
-      /* Pages maintain natural size, grid handles gaps */
-      .pagedjs_pages > .pagedjs_page,
-      .pagedjs_pages > .pagemd-page-wrapper {
-        margin: 0;
-      }`;
-
-      // Page 1 on right: push first page to column 2 (creates margin gap, no placeholder)
-      if (firstPagePosition === 'right') {
-        css += `
-      /* First page on right - push to column 2 (column 1 empty = margin) */
-      .pagedjs_pages > .pagedjs_page:first-child,
-      .pagedjs_pages > .pagemd-page-wrapper:first-child {
-        grid-column: 2;
-      }`;
-      }
-    }
-
-    // Initial zoom transform
-    if (zoom !== 100) {
-      css += `
-      .pagedjs_pages {
-        transform: scale(var(--pagemd-zoom));
-        transform-origin: top center;
-      }`;
-    }
-
-    // Dimension labels CSS (only when both highlightMargins and showDimensions enabled)
-    if (highlightMargins && showDimensions) {
-      css += `
-      /* Page wrapper for positioning context - extra margin for labels */
-      .pagemd-page-wrapper {
-        position: relative;
-        display: inline-block;
-        margin: 60px 80px 80px 80px; /* top right bottom left - room for labels */
-      }
-
-      /* Base label style - readable dark text */
-      .pagemd-label {
-        position: absolute;
-        font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
-        font-size: 12px;
-        color: #202020;
-        white-space: nowrap;
-        pointer-events: none;
-      }
-
-      /* Top label: centered above page */
-      .pagemd-label-top {
-        bottom: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-bottom: 8px;
-        text-align: center;
-      }
-
-      /* Left label: centered left of page */
-      .pagemd-label-left {
-        right: 100%;
-        top: 50%;
-        transform: translateY(-50%);
-        margin-right: 12px;
-        text-align: right;
-      }
-
-      /* Right label: centered right of page */
-      .pagemd-label-right {
-        left: 100%;
-        top: 50%;
-        transform: translateY(-50%);
-        margin-left: 12px;
-        text-align: left;
-      }
-
-      /* Bottom label: centered below page */
-      .pagemd-label-bottom {
-        top: 100%;
-        left: 50%;
-        transform: translateX(-50%);
-        margin-top: 8px;
-        text-align: center;
-      }
-
-      /* Info panel below bottom label */
-      .pagemd-info-panel {
-        position: absolute;
-        top: 100%;
-        left: 0;
-        right: 0;
-        margin-top: 35px;
-        padding: 8px 12px;
-        font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
-        font-size: 12px;
-        color: #202020;
-        border-top: 1px dashed #ccc;
-        text-align: center;
-      }
-
-      .pagemd-info-item { }
-      .pagemd-info-sep {
-        margin: 0 8px;
-        opacity: 0.5;
-      }
-
-      /* Dimension and margin sub-labels */
-      .pagemd-dim {
-        font-weight: 500;
-        display: block;
-      }
-      .pagemd-margin {
-        font-size: 11px;
-        opacity: 0.85;
-        margin-top: 2px;
-        display: block;
-      }
-
-      /* Dark theme adjustments */
-      .vscode-dark .pagemd-label { color: #e0e0e0; }
-      .vscode-dark .pagemd-info-panel { color: #e0e0e0; border-color: #555; }
-
-      /* High contrast theme */
-      .vscode-high-contrast .pagemd-label { color: #fff; }
-      .vscode-high-contrast .pagemd-info-panel { color: #fff; border-color: #fff; }`;
-    }
-
-    return css;
   }
 
   /**
@@ -592,24 +491,29 @@ export class PreviewPanel {
    */
   private getPreviewSettingsJson(): string {
     const config = vscode.workspace.getConfiguration('pagemd');
+    const pagedJsUri = this.getPagedJsUri();
     const settings = {
       highlightMargins: config.get<boolean>('preview.highlightMargins', true),
       showDimensions: config.get<boolean>('preview.showDimensions', true),
       dimensionUnit: config.get<string>('preview.dimensionUnit', 'in'),
+      pagedJsUri: this.panel.webview.asWebviewUri(pagedJsUri).toString(),
     };
     return JSON.stringify(settings);
   }
 
   /**
    * Generate zoom toolbar HTML with controls.
-   * Uses event listeners instead of inline onclick (blocked by CSP).
+   * Logic moved to external media/zoom-toolbar.js for maintainability.
+   * State persisted via VS Code webview state API (session-only).
    */
   private getZoomToolbar(nonce: string): string {
     const config = vscode.workspace.getConfiguration('pagemd');
     const zoom = config.get<number>('preview.zoom', 100);
+    const zoomToolbarUri = this.getZoomToolbarUri();
 
+    // IMPORTANT: position:fixed must be inline - Paged.js strips it from stylesheets
     return `
-    <div class="pagemd-zoom-toolbar">
+    <div class="pagemd-zoom-toolbar" style="position: fixed; bottom: 20px; right: 20px;">
       <button id="zoom-out-btn" title="Zoom Out (Ctrl+-)">−</button>
       <span class="zoom-level" id="zoom-level">${zoom}%</span>
       <button id="zoom-in-btn" title="Zoom In (Ctrl++)">+</button>
@@ -617,232 +521,11 @@ export class PreviewPanel {
       <button class="fit-btn" id="fit-width-btn" title="Fit to Width">Fit</button>
       <button class="fit-btn" id="reset-zoom-btn" title="Reset Zoom (Ctrl+0)">100%</button>
       <span class="zoom-separator"></span>
+      <button class="mode-btn" id="hand-tool-btn" title="Hand Tool (H) - Click and drag to pan">✋</button>
       <button class="mode-btn" id="book-toggle-btn" title="Toggle Book Spread (2-column)">📖</button>
       <button class="mode-btn" id="view-toggle-btn" title="Toggle View (Paged/Browser)">🌐</button>
     </div>
-    <script nonce="${nonce}">
-      (function() {
-        let zoomLevel = ${zoom};
-
-        function updateZoom() {
-          const pages = document.querySelector('.pagedjs_pages');
-          if (pages) {
-            pages.style.transform = 'scale(' + (zoomLevel / 100) + ')';
-            pages.style.transformOrigin = 'top center';
-          }
-          const zoomDisplay = document.getElementById('zoom-level');
-          if (zoomDisplay) {
-            zoomDisplay.textContent = zoomLevel + '%';
-          }
-        }
-
-        function zoomIn() {
-          zoomLevel = Math.min(400, zoomLevel + 25);
-          updateZoom();
-        }
-
-        function zoomOut() {
-          zoomLevel = Math.max(25, zoomLevel - 25);
-          updateZoom();
-        }
-
-        function resetZoom() {
-          zoomLevel = 100;
-          updateZoom();
-        }
-
-        function fitToWidth() {
-          const pages = document.querySelector('.pagedjs_pages');
-          const page = document.querySelector('.pagedjs_page');
-          if (pages && page) {
-            const containerWidth = pages.parentElement.clientWidth - 40;
-            const pageWidth = page.offsetWidth;
-            zoomLevel = Math.floor((containerWidth / pageWidth) * 100);
-            zoomLevel = Math.max(25, Math.min(400, zoomLevel));
-            updateZoom();
-          }
-        }
-
-        // Attach event listeners (CSP-safe)
-        document.getElementById('zoom-out-btn')?.addEventListener('click', zoomOut);
-        document.getElementById('zoom-in-btn')?.addEventListener('click', zoomIn);
-        document.getElementById('fit-width-btn')?.addEventListener('click', fitToWidth);
-        document.getElementById('reset-zoom-btn')?.addEventListener('click', resetZoom);
-
-        // View mode state (session-only, resets on panel close)
-        let viewMode = 'paged'; // 'paged' or 'browser'
-        let bookMode = false;
-        let blobUrl = null;
-
-        function setControlsEnabled(enabled) {
-          const ids = ['zoom-out-btn', 'zoom-in-btn', 'fit-width-btn', 'reset-zoom-btn', 'book-toggle-btn'];
-          ids.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) {
-              if (enabled) {
-                el.removeAttribute('disabled');
-              } else {
-                el.setAttribute('disabled', 'true');
-              }
-            }
-          });
-        }
-
-        function toggleViewMode() {
-          const viewBtn = document.getElementById('view-toggle-btn');
-          const content = document.querySelector('.pagemd-content');
-          const iframe = document.getElementById('browser-view-iframe');
-          const pages = document.querySelector('.pagedjs_pages');
-
-          if (viewMode === 'paged') {
-            // Switch to browser mode
-            viewMode = 'browser';
-            viewBtn.textContent = '📄'; // Show page icon (click to return to paged)
-            viewBtn.classList.add('active');
-
-            // Hide paged content
-            if (content) content.style.display = 'none';
-            if (pages) pages.style.display = 'none';
-
-            // Show iframe with raw HTML
-            if (iframe && window.pagemdRawHtml) {
-              const blob = new Blob([window.pagemdRawHtml], { type: 'text/html' });
-              blobUrl = URL.createObjectURL(blob);
-              iframe.src = blobUrl;
-              iframe.classList.add('active');
-            }
-
-            // Disable zoom and book controls
-            setControlsEnabled(false);
-          } else {
-            // Switch back to paged mode
-            viewMode = 'paged';
-            viewBtn.textContent = '🌐'; // Show globe icon (click to go to browser)
-            viewBtn.classList.remove('active');
-
-            // Show paged content
-            if (content) content.style.display = '';
-
-            // Restore book mode layout if active
-            if (pages) {
-              if (bookMode) {
-                pages.style.display = 'grid';
-                pages.style.gridTemplateColumns = 'repeat(2, auto)';
-                pages.style.justifyContent = 'center';
-              } else {
-                pages.style.display = 'flex';
-              }
-            }
-
-            // Hide and cleanup iframe
-            if (iframe) {
-              iframe.classList.remove('active');
-              if (blobUrl) {
-                URL.revokeObjectURL(blobUrl);
-                blobUrl = null;
-              }
-              iframe.src = 'about:blank';
-            }
-
-            // Re-enable zoom and book controls
-            setControlsEnabled(true);
-          }
-        }
-
-        function toggleBookMode() {
-          if (viewMode !== 'paged') return; // Only works in paged mode
-
-          const bookBtn = document.getElementById('book-toggle-btn');
-          const pages = document.querySelector('.pagedjs_pages');
-
-          bookMode = !bookMode;
-
-          if (bookMode) {
-            bookBtn.classList.add('active');
-            if (pages) {
-              pages.style.display = 'grid';
-              pages.style.gridTemplateColumns = 'repeat(2, auto)';
-              pages.style.justifyContent = 'center';
-            }
-          } else {
-            bookBtn.classList.remove('active');
-            if (pages) {
-              pages.style.display = 'flex';
-              pages.style.gridTemplateColumns = '';
-              pages.style.justifyContent = '';
-            }
-          }
-        }
-
-        document.getElementById('view-toggle-btn')?.addEventListener('click', toggleViewMode);
-        document.getElementById('book-toggle-btn')?.addEventListener('click', toggleBookMode);
-
-        // Keyboard shortcuts
-        document.addEventListener('keydown', function(e) {
-          if (e.ctrlKey || e.metaKey) {
-            if (e.key === '=' || e.key === '+') {
-              e.preventDefault();
-              zoomIn();
-            } else if (e.key === '-') {
-              e.preventDefault();
-              zoomOut();
-            } else if (e.key === '0') {
-              e.preventDefault();
-              resetZoom();
-            }
-          }
-        });
-
-        // Position toolbar fixed in viewport using JavaScript
-        // (CSS fixed doesn't work due to Paged.js transform containers)
-        function positionToolbar() {
-          const toolbar = document.querySelector('.pagemd-zoom-toolbar');
-          if (!toolbar) return;
-
-          const viewportHeight = window.innerHeight;
-          const viewportWidth = window.innerWidth;
-          const toolbarRect = toolbar.getBoundingClientRect();
-
-          // Position at bottom-right of viewport
-          toolbar.style.top = (window.scrollY + viewportHeight - toolbarRect.height - 20) + 'px';
-          toolbar.style.left = (window.scrollX + viewportWidth - toolbarRect.width - 20) + 'px';
-        }
-
-        // Move toolbar to body and set up scroll tracking
-        function initToolbar() {
-          const toolbar = document.querySelector('.pagemd-zoom-toolbar');
-          if (!toolbar) return;
-
-          // Move to body if not already there
-          if (toolbar.parentElement !== document.body) {
-            document.body.appendChild(toolbar);
-          }
-
-          // Initial position
-          positionToolbar();
-
-          // Update on scroll and resize
-          window.addEventListener('scroll', positionToolbar, { passive: true });
-          window.addEventListener('resize', positionToolbar, { passive: true });
-
-          // Also track scroll on document element (some browsers)
-          document.documentElement.addEventListener('scroll', positionToolbar, { passive: true });
-        }
-
-        // Run after Paged.js finishes
-        window.addEventListener('pagedjs-complete', function() {
-          setTimeout(initToolbar, 50);
-        });
-        // Also run on load as fallback
-        window.addEventListener('load', function() {
-          setTimeout(initToolbar, 100);
-        });
-        // And run immediately in case DOM is ready
-        if (document.readyState === 'complete') {
-          setTimeout(initToolbar, 50);
-        }
-      })();
-    </script>`;
+    <script nonce="${nonce}" src="${zoomToolbarUri}"></script>`;
   }
 
   /**
@@ -865,8 +548,27 @@ export class PreviewPanel {
     const pagedJsUri = this.getPagedJsUri();
     const previewerUri = this.getPreviewerUri();
     const previewStyles = this.getPreviewStyles();
-    const zoomToolbarCss = this.getZoomToolbarCss();
+    const stylesheetLinks = this.getStylesheetLinks(nonce);
     const zoomToolbar = this.getZoomToolbar(nonce);
+
+    // Build body classes based on settings
+    const config = vscode.workspace.getConfiguration('pagemd');
+    const bodyClasses = [themeClass];
+    if (config.get('preview.twoColumnSpread', false)) {
+      bodyClasses.push('two-column');
+    }
+    if (config.get('preview.firstPagePosition') === 'right') {
+      bodyClasses.push('first-page-right');
+    }
+    // Add debug class based on level
+    const debugLevel = config.get<string>('preview.debugLevel', '');
+    if (debugLevel) {
+      bodyClasses.push(`debug-${debugLevel}`);
+    }
+    // Add highlight-margins class when enabled
+    if (config.get<boolean>('preview.highlightMargins', true)) {
+      bodyClasses.push('highlight-margins');
+    }
 
     // Extract body content if full HTML document
     let bodyContent = content;
@@ -875,100 +577,121 @@ export class PreviewPanel {
       bodyContent = bodyMatch[1];
     }
 
-    // Extract styles from original document
+    // Extract styles from original document, preserving @layer structure
     let styles = '';
     const styleMatches = content.matchAll(/<style[^>]*>([\s\S]*?)<\/style>/gi);
     for (const match of styleMatches) {
-      styles += match[1];
+      const fullStyleTag = match[0];
+      let styleContent = match[1];
+
+      // IMPORTANT: Even though VS Code 1.103+ wraps defaults in @layer vscode-default
+      // (see https://github.com/microsoft/vscode/issues/261430), Paged.js generates
+      // UNLAYERED CSS which always beats layered CSS per cascade rules.
+      // We must use !important to ensure document styles win over Paged.js.
+      //
+      // CRITICAL: With !important, layer order REVERSES (base !important beats frontmatter !important).
+      // Solution: Make frontmatter TRULY UNLAYERED by removing @layer wrapper.
+      // Unlayered CSS with !important beats layered CSS with !important.
+
+      const criticalProps = [
+        'font-family',
+        'font-size',
+        'font-weight',
+        'line-height',
+        'color',
+        'background-color',
+        'background',
+      ];
+
+      const isFrontmatterLayer = /data-layer=["']frontmatter["']/.test(fullStyleTag);
+
+      if (isFrontmatterLayer) {
+        // Frontmatter: Strip @layer wrapper completely to make it unlayered
+        // Match @layer frontmatter { ... } and extract the inner CSS
+        const layerMatch = styleContent.match(/@layer\s+frontmatter\s*\{\s*([\s\S]*?)\s*\}\s*$/i);
+        if (layerMatch) {
+          styleContent = layerMatch[1];
+        }
+
+        // CRITICAL: Add !important ONLY to frontmatter (unlayered)
+        // Per CSS spec: layered !important beats unlayered !important (inverted cascade)
+        // So we MUST NOT add !important to layered styles, only to unlayered frontmatter
+        for (const prop of criticalProps) {
+          const regex = new RegExp(`(${prop}\\s*:\\s*)([^;!]+)(;)`, 'gi');
+          styleContent = styleContent.replace(regex, '$1$2 !important$3');
+        }
+      } else {
+        // Other layers: Keep @layer wrapper, but DO NOT add !important
+        // Layered styles without !important are overridden by unlayered !important
+        // This gives frontmatter the highest priority
+        // Note: Paged.js unlayered CSS will override these layered styles, but
+        // frontmatter unlayered !important will override Paged.js
+      }
+
+      // Append the content (including @layer wrapper) to styles
+      // The template will wrap all of this in a single <style> tag
+      styles += styleContent + '\n';
+    }
+
+    // Extract data-color-scheme attribute from CLI-generated HTML
+    let colorScheme = 'auto';
+    const htmlMatch = content.match(/<html[^>]*data-color-scheme=["']([^"']+)["']/i);
+    if (htmlMatch) {
+      colorScheme = htmlMatch[1];
+    }
+
+    // For paged preview, override 'auto' to 'light' for print consistency
+    // User's explicit light/dark choice is preserved
+    if (colorScheme === 'auto') {
+      colorScheme = 'light';
     }
 
     // Note: We skip external CSS links as they won't resolve in webview
     // All necessary styles come from the CLI-generated HTML inline styles
 
     return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-color-scheme="${colorScheme}">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   ${csp}
   <title>PageMD Preview</title>
+  ${stylesheetLinks}
   <style>
-    /* Document styles from CLI */
+    /* Declare layer order: vscode-default at lowest priority, our layers override */
+    /* See: https://github.com/microsoft/vscode/issues/261430 */
+    /* pagemd-preview = extension CSS for .pagedjs_* elements */
+    /* frontmatter layer intentionally NOT declared - undeclared layers have highest priority */
+    @layer vscode-default, pagemd-preview, base, primary, layout, syntax, profile;
+
+    /* Document styles from CLI (in layers: base, primary, layout, syntax, profile, frontmatter) */
     ${styles}
 
-    /* Preview-specific base styles */
-    html {
-      min-height: 100%;
-      background-color: var(--pagemd-bg-color);
-    }
-    body {
-      margin: 0;
-      padding: 0;
-      min-height: 100vh;
-      background-color: var(--pagemd-bg-color);
-    }
-    /* Content wrapper - allow horizontal expansion with room for dimension labels */
-    .pagemd-content {
-      width: fit-content;
-      min-width: 100%;
-      min-height: 100vh;
-      padding: 20px 100px; /* top/bottom, left/right - room for margin labels */
-      box-sizing: border-box;
-    }
-
-    /* Preview visual settings */
+    /* CSS variables (dynamic per-session) */
     ${previewStyles}
-
-    /* Zoom toolbar */
-    ${zoomToolbarCss}
-
-    /* Browser view iframe (hidden by default) */
-    .pagemd-browser-view {
-      display: none;
-      width: 100%;
-      height: 100vh;
-      border: none;
-      position: fixed;
-      top: 0;
-      left: 0;
-      z-index: 1000;
-      background: white;
-    }
-    .pagemd-browser-view.active {
-      display: block;
-    }
   </style>
 </head>
-<body class="${themeClass}">
+<body class="${bodyClasses.join(' ')}">
   <div class="pagemd-content">
     ${bodyContent}
   </div>
-  <iframe id="browser-view-iframe" class="pagemd-browser-view"></iframe>
+  <iframe id="browser-view-iframe" class="pagemd-browser-view" sandbox="allow-scripts allow-same-origin"></iframe>
   ${zoomToolbar}
   <script nonce="${nonce}">
     // Initialize PagedConfig before Paged.js loads
     window.PagedConfig = window.PagedConfig || { auto: true };
     // Pass preview settings to previewer.js
     window.pagemdSettings = ${this.getPreviewSettingsJson()};
+    // Pass debug level state
+    window.pagemdDebugLevel = '${config.get<string>('preview.debugLevel', '')}';
     // Store raw HTML for browser mode toggle (before Paged.js transforms it)
+    // Use data-color-scheme for document theming (same as paged preview)
     window.pagemdRawHtml = ${JSON.stringify(`<!DOCTYPE html>
-<html><head><meta charset="UTF-8"><style>${styles}</style></head>
-<body class="${themeClass}">${bodyContent}</body></html>`)};
+<html data-color-scheme="${colorScheme}"><head><meta charset="UTF-8"><style>${styles}</style></head>
+<body>${bodyContent}</body></html>`)};
   </script>
   <script nonce="${nonce}" src="${previewerUri}"></script>
   <script nonce="${nonce}" src="${pagedJsUri}"></script>
-  <script nonce="${nonce}">
-    // Handle messages from webview
-    const vscode = acquireVsCodeApi();
-
-    // Listen for Paged.js rendered event (sent by previewer.js)
-    window.addEventListener('message', (event) => {
-      const message = event.data;
-      if (message.type === 'rendered') {
-        vscode.postMessage(message);
-      }
-    });
-  </script>
 </body>
 </html>`;
   }
@@ -980,6 +703,9 @@ export class PreviewPanel {
     const nonce = getNonce();
     const themeClass = getThemeClass();
     const csp = getCspMetaTag(this.panel.webview, nonce);
+    const errorCssUri = this.panel.webview.asWebviewUri(
+      vscode.Uri.joinPath(this.extensionUri, 'media', 'styles', 'preview-error.css')
+    );
 
     this.panel.webview.html = `<!DOCTYPE html>
 <html lang="en">
@@ -987,21 +713,7 @@ export class PreviewPanel {
   <meta charset="UTF-8">
   ${csp}
   <title>PageMD Preview Error</title>
-  <style>
-    body {
-      font-family: var(--vscode-font-family);
-      padding: 20px;
-      color: var(--vscode-errorForeground);
-    }
-    .error-icon { font-size: 48px; margin-bottom: 16px; }
-    .error-message {
-      background: var(--vscode-inputValidation-errorBackground);
-      border: 1px solid var(--vscode-inputValidation-errorBorder);
-      padding: 12px;
-      border-radius: 4px;
-      white-space: pre-wrap;
-    }
-  </style>
+  <link rel="stylesheet" href="${errorCssUri}">
 </head>
 <body class="${themeClass}">
   <div class="error-icon">⚠️</div>

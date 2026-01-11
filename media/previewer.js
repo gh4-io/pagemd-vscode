@@ -5,13 +5,23 @@
 
 "use strict";
 
-// Cache VS Code API - can only be acquired once per webview
-let vscodeApi = null;
-function getVsCodeApi() {
-  if (!vscodeApi) {
-    vscodeApi = acquireVsCodeApi();
+// Acquire VS Code API IMMEDIATELY at load time - before any other code runs
+// This ensures we get the reference before Paged.js or any callbacks execute
+// acquireVsCodeApi() can only be called once per webview lifetime
+(function initVsCodeApi() {
+  if (typeof acquireVsCodeApi === 'function' && !window._pagemdVscodeApi) {
+    try {
+      window._pagemdVscodeApi = acquireVsCodeApi();
+    } catch (e) {
+      // Shouldn't happen if we're first, but log for debugging
+      console.error('[PageMD] VS Code API acquisition failed:', e.message);
+    }
   }
-  return vscodeApi;
+})();
+
+// Helper to get cached API reference
+function getVsCodeApi() {
+  return window._pagemdVscodeApi;
 }
 
 // Store layout info extracted before Paged.js transforms the CSS
@@ -83,12 +93,13 @@ function setup() {
   // Move styles to head for proper loading
   moveStylesToHead(container);
 
-  // Configure Paged.js
+  // Configure Paged.js - render INTO the container (don't remove it)
+  // This preserves .pagemd-content as wrapper for scroll boundary control
   window.PagedConfig.content = container.innerHTML;
-  window.PagedConfig.renderTo = container.parentElement;
+  window.PagedConfig.renderTo = container;
 
-  // Remove original container after extracting content
-  container.remove();
+  // Clear the container content (Paged.js will populate it)
+  container.innerHTML = '';
 }
 
 /**
@@ -157,13 +168,32 @@ function moveTrailingSpaceCharacters() {
 }
 
 /**
+ * Default layout info when @page rules cannot be extracted.
+ */
+function getDefaultLayoutInfo() {
+  return {
+    pageName: '@page',
+    size: { width: '8.5in', height: '11in', name: 'Letter', orientation: 'portrait' },
+    margins: { top: '0.5in', right: '0.5in', bottom: '0.5in', left: '0.5in' },
+    padding: { top: '0', right: '0', bottom: '0', left: '0' },
+    rawCss: 'Letter portrait'
+  };
+}
+
+/**
  * Extract page layout info from @page CSS rules.
  * Returns structured object with size, margins, padding, orientation.
  */
 function extractLayoutInfo() {
   // Search ALL style tags for @page rules (CLI output may not have data-layer attribute)
   const styles = document.querySelectorAll('style');
-  const cssText = Array.from(styles).map(s => s.textContent).join('\n');
+
+  // Guard: no styles at all
+  if (!styles || styles.length === 0) {
+    return getDefaultLayoutInfo();
+  }
+
+  const cssText = Array.from(styles).map(s => s.textContent || '').join('\n');
 
   // Find ALL @page rules - we need the one with actual size/margin declarations
   // Paged.js may inject defaults, so look for the layout-specific rule
@@ -217,6 +247,11 @@ function extractLayoutInfo() {
   // If still no pageBody, use the first @page rule found
   if (!pageBody && pageRules.length > 0) {
     pageBody = pageRules[0][1];
+  }
+
+  // Guard: no @page rules found at all
+  if (!pageBody && pageRules.length === 0) {
+    return getDefaultLayoutInfo();
   }
 
   // Extract size (e.g., "Letter portrait", "8.5in 11in", "A4")

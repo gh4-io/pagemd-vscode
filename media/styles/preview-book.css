@@ -1,0 +1,31 @@
+/* Book spread styles - two-column layout */
+/* Wrapped in @layer to ensure proper cascade priority */
+@layer pagemd-preview {
+
+/* Two-column book spread - CSS Grid layout
+   Grid provides reliable two-column layout with configurable gaps.
+   'safe center' centers content when it fits, aligns to start when overflow
+   (allows full horizontal scrolling at high zoom levels) */
+.pagedjs_pages {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  column-gap: var(--pagemd-spread-gap, 5mm);  /* horizontal: spreadGap */
+  row-gap: var(--pagemd-page-gap, 5mm);       /* vertical: pageGap */
+  justify-content: safe center;
+  padding: 20px;
+}
+
+/* Pages maintain natural size, grid handles gaps */
+.pagedjs_pages > .pagedjs_page,
+.pagedjs_pages > .pagemd-page-wrapper {
+  margin: 0;
+}
+
+/* First page on right - push to column 2 (column 1 empty = margin)
+   Applied conditionally based on firstPagePosition setting */
+.pagedjs_pages.first-page-right > .pagedjs_page:first-child,
+.pagedjs_pages.first-page-right > .pagemd-page-wrapper:first-child {
+  grid-column: 2;
+}
+
+} /* end @layer pagemd-preview */

@@ -1,23 +1,37 @@
-# PageMD VS Code
+**[[Home]]**
 
-## Getting Started
-- [[Home]]
-- [[Introduction]]
+### Getting Started
 - [[Quick-Start]]
-- [[Installation]]
 
-## User Guide
-- [[Preview]]
-- [[Commands]]
-- [[Settings]]
+### Understanding PageMD
+- [[general/Overview|Overview]]
+- [[general/Architecture|Architecture]]
+- [[general/Concepts|Key Concepts]]
+- [[general/Preview-Architecture|Preview Architecture]]
 
-## Reference
+### Usage Guides
+- [[guides/Basic-Usage|Basic Usage]]
+- [[guides/Installation|Installation]]
+- [[guides/Preview|Preview Panel]]
+
+### Reference
+- [[reference/Commands|Commands]]
+- [[reference/Settings|Settings]]
+- [[reference/Appendix|Appendix]]
+
+### For Developers
+- [[development/Setup|Development Setup]]
+- [[development/Building|Building]]
+- [[development/CLI-Bundling|CLI Bundling]]
+- [[development/Testing|Testing]]
+- [[development/Debugging|Debugging]]
+- [[development/Packaging|Packaging]]
+- [[development/Adding-Commands|Adding Commands]]
+- [[development/Extension-API|Extension API]]
+- [[development/Contributing|Contributing]]
+
+### Help
 - [[Troubleshooting]]
-- [[Appendix]]
-
-## Technical
-- [[Architecture]]
-- [[Developer-Guide]]
 
 ---
 

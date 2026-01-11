@@ -15,13 +15,21 @@ Common issues and solutions for the PageMD VS Code extension.
   - [Preview is Blank](#preview-is-blank)
   - [Preview Shows Raw HTML](#preview-shows-raw-html)
   - [Preview Doesn't Update](#preview-doesnt-update)
+  - [VS Code Styles Bleeding Into Document](#vs-code-styles-bleeding-into-document)
   - [Margins Not Visible](#margins-not-visible)
   - [Pages Not Centered](#pages-not-centered)
   - [Two-Column Book Layout Not Working](#two-column-book-layout-not-working)
   - [Cannot Scroll to See Full Page](#cannot-scroll-to-see-full-page)
+  - [Scroll Margins at High Zoom](#scroll-margins-at-high-zoom)
   - [Dimension Labels Cut Off](#dimension-labels-cut-off)
   - [Background Doesn't Cover Full Area](#background-doesnt-cover-full-area)
+  - [Browser View Shows Blank Page](#browser-view-shows-blank-page)
+  - [Paged.js Toggle Button Not Visible](#pagedjs-toggle-button-not-visible)
+  - [External Scripts Not Running in Browser View](#external-scripts-not-running-in-browser-view)
+  - [Browser View Styles Missing](#browser-view-styles-missing)
+  - [Custom CSS position:fixed Not Working](#custom-css-positionfixed-not-working)
 - [Export Problems](#export-problems)
+  - [Non-Headless Mode for Debugging](#non-headless-mode-for-debugging)
 - [Validation Errors](#validation-errors)
 - [Performance](#performance)
 - [Debugging](#debugging)
@@ -230,19 +238,53 @@ This indicates Paged.js failed to load. Check:
 
 **Solutions:**
 
-1. **Check auto-refresh setting:**
+1. **Check refresh mode setting:**
 
    ```json
-   "pagemd.autoRefreshPreview": true
+   "pagemd.previewRefresh": "onSave"  // Or "live" for real-time updates
    ```
 
-2. **Check trigger mode:**
-
-   ```json
-   "pagemd.previewTrigger": "onSave"  // Try "onType"
-   ```
+2. **Manually refresh preview** (Command Palette → "Refresh Preview")
 
 3. **Manually reopen preview** (close and rerun command)
+
+---
+
+### VS Code Styles Bleeding Into Document
+
+**Symptom:** Document text appears in wrong font, code blocks have VS Code colors, links use VS Code theme colors instead of document styles.
+
+**Cause:** VS Code injects default webview styles in `@layer vscode-default`. If document CSS doesn't properly override these, VS Code styling shows through.
+
+**Solutions:**
+
+1. **Ensure base.css covers all VS Code properties:**
+
+   VS Code sets properties on these elements that must be explicitly overridden:
+   - `body`: font-family, font-size, font-weight, color, margin, padding
+   - `code`: font-family, color, background-color, padding, border-radius
+   - `a:hover`: color
+   - `blockquote`: background, border-color
+   - `video`: max-width, max-height
+
+2. **Check CSS layer order in DevTools:**
+
+   Open DevTools in preview (`Ctrl+Shift+I`), select an affected element, look at Styles panel. Layers should appear in this order (lowest to highest priority):
+   - `vscode-default`
+   - `pagemd-preview`
+   - `base`
+   - `primary`
+   - `layout` → `syntax` → `profile` → `frontmatter`
+
+3. **Verify `!important` injection is working:**
+
+   In DevTools Styles panel, document styles for font-family, font-size, color, etc. should show `!important` flag.
+
+4. **Check for unlayered CSS:**
+
+   If Paged.js generated CSS appears unlayered in DevTools, it will override all layered CSS. This is expected - the `!important` hack compensates for this.
+
+**Technical Details:** See [[general/Preview-Architecture#css-cascade-architecture]] for full documentation.
 
 ---
 
@@ -324,6 +366,41 @@ The preview should allow horizontal scrolling automatically. If content is clipp
 
 ---
 
+### Scroll Margins at High Zoom
+
+**Behavior:** The preview automatically adds 60px scroll margins on both left and right sides when content is zoomed. This ensures:
+
+- Equal spacing on both edges when scrolling at high zoom (200%+)
+- Pages remain centered at normal zoom levels
+- Full content visibility - can scroll to see all content edges
+
+**Debug Visualization:**
+
+When `pagemd.debugMode` is enabled, scroll boundary spacers are visible:
+
+| Element | Color | Description |
+|---------|-------|-------------|
+| Left spacer | Magenta | Left scroll boundary (60px) |
+| Right spacer | Cyan | Right scroll boundary (60px) |
+
+**Technical Implementation:**
+
+The preview uses DOM spacer elements injected around `.pagedjs_pages`:
+
+```
+.pagemd-content (inline-flex container)
+  ├── .pagemd-scroll-spacer-left (60px)
+  ├── .pagedjs_pages (zoomed content, centered via margin auto)
+  └── .pagemd-scroll-spacer-right (60px)
+```
+
+This approach works because:
+- Real DOM elements participate in scroll area calculation
+- `inline-flex` with `min-width: 100%` shrink-wraps when content overflows, fills viewport when content fits
+- `margin: 0 auto` on `.pagedjs_pages` centers content between spacers
+
+---
+
 ### Dimension Labels Cut Off
 
 **Symptom:** Margin labels on left/right edges are partially visible
@@ -348,6 +425,152 @@ The gray background should extend to all edges. If gaps appear:
 
 ---
 
+### Browser View Shows Blank Page
+
+**Symptom:** Browser view panel opens but displays empty/blank content
+
+**Causes:**
+
+1. Content still loading
+2. CSP (Content Security Policy) blocking required resources
+3. Styles not inline or from same origin
+
+**Solutions:**
+
+1. **Wait for content to load** - browser view may take a moment to render
+
+2. **Check DevTools console:**
+
+   Right-click in preview → "Inspect Element" → Console tab
+   Look for CSP violation errors
+
+3. **Verify styles are inline:**
+
+   Browser view requires inline styles or blob/data URIs. External stylesheet links will be blocked by CSP.
+
+4. **Check Output panel:**
+
+   `View` → `Output` → select "PageMD"
+
+---
+
+### Paged.js Toggle Button Not Visible
+
+**Symptom:** Cannot find the Paged.js toggle button (📄) to switch between paged and unpaged views
+
+**Causes:**
+
+Button only appears in browser view mode, not in paged view mode
+
+**Solution:**
+
+**Switch to browser view first:**
+
+1. Click the globe button (🌐) in preview toolbar to switch to browser view mode
+2. The Paged.js toggle button (📄) will appear in browser view
+3. Click toggle button to switch between paged and unpaged rendering
+
+**Toolbar flow:**
+
+```
+Paged View (default) → [🌐 Browser] → Browser View → [📄 Paged.js Toggle] → Toggle on/off
+```
+
+---
+
+### External Scripts Not Running in Browser View
+
+**Symptom:** JavaScript from external files doesn't execute in browser view
+
+**Cause:**
+
+Intentional security restriction - browser view blocks external scripts via CSP (Content Security Policy)
+
+**Solution:**
+
+**This is by design for security.** External scripts cannot run in browser view mode.
+
+If you need interactive JavaScript:
+- Use the CLI to build HTML with full JavaScript support
+- Open the built HTML file in a regular browser
+
+**Note:** Inline scripts in the HTML may work, but external script files will always be blocked.
+
+---
+
+### Browser View Styles Missing
+
+**Symptom:** Formatting and colors don't appear correctly in browser view
+
+**Cause:**
+
+CSP restricts external stylesheets from loading
+
+**Solutions:**
+
+1. **Verify styles are inline:**
+
+   Browser view requires styles to be embedded in the HTML document, not linked externally
+
+2. **Check for external stylesheet links:**
+
+   External `<link rel="stylesheet">` elements will be blocked
+
+3. **Use blob/data URIs:**
+
+   If styles must be separate, they need to be loaded via blob or data URIs, not external URLs
+
+**Technical Note:** The browser view uses a strict CSP that blocks external resources to prevent security issues. All styling must be inline or from same-origin sources.
+
+---
+
+### Custom CSS position:fixed Not Working
+
+**Symptom:** Elements styled with `position: fixed` appear in normal flow instead of fixed to viewport
+
+**Cause:**
+
+Paged.js transforms all CSS from `<style>` tags and linked stylesheets during pagination. As part of this transformation, it removes `position: fixed` because fixed positioning conflicts with paginated document flow.
+
+**Technical Details:**
+
+| What Happens | Why |
+|--------------|-----|
+| Paged.js parses all `<style>` tags | Needs to process `@page` rules and page-breaking CSS |
+| CSS is rewritten to `<style data-pagedjs-inserted-styles>` | Creates new processed stylesheet |
+| `position: fixed` is stripped | Fixed elements would overlap paginated pages |
+| Original stylesheets removed | Replaced by processed version |
+
+**Evidence in DevTools:**
+
+If you inspect the page and look at the `<style data-pagedjs-inserted-styles="true">` tag, you'll see your class exists but the `position: fixed` property is missing.
+
+**Solution:**
+
+Use inline styles on the element instead of CSS classes:
+
+```html
+<!-- This gets stripped by Paged.js -->
+<style>
+.my-fixed-element { position: fixed; bottom: 20px; right: 20px; }
+</style>
+
+<!-- This works - inline styles are not processed -->
+<div class="my-fixed-element" style="position: fixed; bottom: 20px; right: 20px;">
+  Fixed content
+</div>
+```
+
+**Why Inline Styles Work:**
+
+- Paged.js only processes CSS in `<style>` tags and `<link>` stylesheets
+- Element `style=""` attributes are NOT parsed or modified
+- The browser applies inline styles after Paged.js finishes
+
+**Note:** `!important` does NOT help in this case because Paged.js removes the property entirely - it doesn't override it. There's no cascade competition; the property simply doesn't exist in the processed CSS.
+
+---
+
 ## Export Problems
 
 ### Export Times Out
@@ -364,13 +587,47 @@ The gray background should extend to all edges. If gaps appear:
 
 1. **Increase timeout:**
 
+   For PDF export:
    ```json
    "pagemd.pdfTimeout": 120000  // 2 minutes
+   ```
+
+   For preview panel:
+   ```json
+   "pagemd.previewTimeout": 120000  // 2 minutes
    ```
 
 2. **Simplify document** for testing
 
 3. **Check resources:** Large images can slow rendering
+
+---
+
+### Non-Headless Mode for Debugging
+
+**Purpose:** Keep browser visible after PDF generation for debugging CSS/layout issues.
+
+**Enable:**
+```json
+"pagemd.headless": false
+```
+
+**Behavior:**
+- PDF renders normally
+- **Tab stays open** for inspection (use DevTools F12)
+- **Browser window remains** visible (orphaned process)
+- **CLI process exits cleanly** (no timeout)
+- Message in output: `📋 Browser left open for inspection. Close it manually when done.`
+
+**When to Use:**
+- Debugging CSS layout issues
+- Inspecting Paged.js output
+- Checking margin/page-break behavior
+- Diagnosing rendering problems
+
+**Close browser manually** when done - it won't close automatically.
+
+**Technical Note:** The browser becomes an orphaned process because puppeteer-core's `disconnect()` releases the WebSocket connection but doesn't terminate the browser. This is intentional - it allows inspection without blocking the extension.
 
 ---
 
@@ -485,10 +742,10 @@ The gray background should extend to all edges. If gaps appear:
 
 **Solutions:**
 
-1. **Use `onSave` instead of `onType`:**
+1. **Use `onSave` instead of `live` mode:**
 
    ```json
-   "pagemd.previewTrigger": "onSave"
+   "pagemd.previewRefresh": "onSave"
    ```
 
 2. **Reduce document size** for testing
@@ -533,16 +790,38 @@ Debug mode:
 2. Select "PageMD" from dropdown
 3. Review messages for errors
 
+**Error Message Format:**
+
+Error popups show clean, user-friendly messages extracted from CLI output. Full details (timestamps, log metadata, JSON data) are preserved in the Output panel.
+
+**Example:**
+
+| Popup Message | Output Panel |
+|---------------|--------------|
+| `duplicated mapping key at line 78` | Full logger output with timestamps, [ERROR] tags, JSON objects, stack traces |
+
+**To see full details:** Click the "Show Output" button on any error popup to open the Output panel with complete diagnostic information.
+
+**Technical Note:** The extension extracts the `✓ Success:` and `✗ Failed:` messages from CLI output for popups. This is a temporary solution; future versions will use direct API imports for structured error objects.
+
 ### Debug Artifacts
 
-With debug mode enabled, check output folder for:
+With debug mode enabled, check `debug/` folder (next to output) for:
 
 | File | Contents |
 |------|----------|
-| `*.debug.html` | Pre-pagination HTML |
-| `*.paged.html` | Post-pagination HTML |
-| `*.debug.png` | Screenshot |
-| `*.log` | Render log |
+| `{name}.paged.html` | HTML snapshot after Paged.js processing |
+| `{name}.screenshot.png` | Full page screenshot |
+
+**Example:** Building `report.md` with debug mode creates:
+```
+output/
+├── report.pdf
+├── report.html
+└── debug/
+    ├── report.paged.html
+    └── report.screenshot.png
+```
 
 ### CLI Verbose Mode
 

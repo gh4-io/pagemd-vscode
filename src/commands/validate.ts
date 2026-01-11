@@ -1,7 +1,8 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { runPageMD } from '../utils/cli-wrapper';
+import { runPageMD, buildCliEnv } from '../utils/cli-wrapper';
 import { ProfileState } from '../providers/profile-picker';
+import { logStructured } from '../extension';
 
 /**
  * Validate the active markdown file.
@@ -34,8 +35,7 @@ export async function validateDocument(
   const profile = profileState.getSelectedProfile();
 
   outputChannel.appendLine(`\n${'='.repeat(60)}`);
-  outputChannel.appendLine(`[PageMD] Validating: ${fileName}`);
-  outputChannel.appendLine(`[PageMD] Profile: ${profile}`);
+  logStructured('INFO', 'command', 'validate', 'start', 'Validating document', { file: fileName, profile });
   outputChannel.appendLine(`${'='.repeat(60)}\n`);
 
   try {
@@ -50,6 +50,7 @@ export async function validateDocument(
           cwd,
           timeout: 30000,
           outputChannel,
+          env: buildCliEnv(),
         });
       }
     );
@@ -58,7 +59,8 @@ export async function validateDocument(
     const issues = parseValidationOutput(result.stdout + result.stderr);
     updateDiagnostics(document.uri, issues, diagnostics);
 
-    outputChannel.appendLine(`\n[PageMD] Exit code: ${result.code}`);
+    outputChannel.appendLine('');
+    logStructured('INFO', 'command', 'validate', result.code === 0 ? 'success' : 'fail', 'Validation complete', { exitCode: result.code });
 
     // Show result notification
     if (result.code === 0) {
@@ -83,7 +85,8 @@ export async function validateDocument(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`\n[PageMD] Error: ${message}`);
+    outputChannel.appendLine('');
+    logStructured('ERROR', 'command', 'validate', 'fail', 'Validation error', { error: message });
     vscode.window.showErrorMessage(`PageMD: Validation error - ${message}`);
   }
 }

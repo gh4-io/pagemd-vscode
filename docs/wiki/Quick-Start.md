@@ -144,14 +144,15 @@ Enable margin highlighting:
 
 ## Next Steps
 
-- [[Preview]] - Learn about preview features
-- [[Commands]] - Explore all commands
-- [[Settings]] - Customize the extension
+- [[guides/Preview|Preview]] - Learn about preview features
+- [[reference/Commands|Commands]] - Explore all commands
+- [[reference/Settings|Settings]] - Customize the extension
 - [[Troubleshooting]] - Common issues and solutions
 
 ---
 
 ## See Also
 
-- [[Installation]] - Detailed installation options
-- [[Introduction]] - What is PageMD?
+- [[guides/Installation|Installation]] - Detailed installation options
+- [[general/Overview|Overview]] - What is PageMD?
+- [[guides/Basic-Usage|Basic Usage]] - Common tasks

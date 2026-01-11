@@ -8,11 +8,13 @@ The official VS Code extension for PageMD - export Markdown to PDF with paged pr
 
 ## Quick Links
 
-| Getting Started | Reference | Operations |
-|-----------------|-----------|------------|
-| [[Quick-Start]] | [[Commands]] | [[Troubleshooting]] |
-| [[Installation]] | [[Settings]] | [[Developer-Guide]] |
-| [[Introduction]] | [[Preview]] | [[Architecture]] |
+| Getting Started | Reference | Developer |
+|-----------------|-----------|-----------|
+| [[Quick-Start]] | [[reference/Commands\|Commands]] | [[development/Setup\|Setup]] |
+| [[guides/Installation\|Installation]] | [[reference/Settings\|Settings]] | [[development/Building\|Building]] |
+| [[general/Overview\|Overview]] | [[reference/Appendix\|Appendix]] | [[development/Contributing\|Contributing]] |
+| [[guides/Basic-Usage\|Basic Usage]] | [[Troubleshooting]] | [[development/Extension-API\|Extension API]] |
+| [[guides/Preview\|Preview]] | [[general/Architecture\|Architecture]] | [[development/Packaging\|Packaging]] |
 
 ---
 
@@ -70,6 +72,7 @@ The extension does not override VS Code's built-in Markdown preview. Instead, it
 ## See Also
 
 - [[Quick-Start]] - Get started in 5 minutes
-- [[Installation]] - Detailed installation options
-- [[Commands]] - All available commands
+- [[guides/Installation|Installation]] - Detailed installation options
+- [[reference/Commands|Commands]] - All available commands
+- [[general/Overview|Overview]] - Extension overview
 - [PageMD CLI Documentation](../../pagemd/docs/wiki/Home.md)

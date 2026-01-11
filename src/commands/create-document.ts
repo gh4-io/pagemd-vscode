@@ -1,13 +1,24 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { runPageMD } from '../utils/cli-wrapper';
+import { runPageMD, buildCliEnv } from '../utils/cli-wrapper';
 import { listProfiles } from '../utils/cli-wrapper';
+import { extractCleanMessage } from '../utils/cli-message-extractor';
+import { logStructured } from '../extension';
 
 /**
- * Create a new PageMD document, profile, or project.
+ * Create a new PageMD resource.
  *
  * Prompts for resource type, name, and template selection.
- * Uses pagemd init or pagemd create CLI commands.
+ * Uses pagemd init or pagemd create CLI commands based on resource type.
+ *
+ * Resource types and their CLI commands:
+ * - project: pagemd init --type project (folder + md + profile + stubs)
+ * - markdown-init: pagemd init --type markdown (md + profile)
+ * - markdown: pagemd create markdown (md only)
+ * - profile: pagemd create profile
+ * - style: pagemd create style
+ * - layout: pagemd create layout
+ * - template: pagemd create template
  */
 export async function createDocument(
   outputChannel: vscode.OutputChannel
@@ -15,9 +26,13 @@ export async function createDocument(
   // Step 1: Select resource type
   const resourceType = await vscode.window.showQuickPick(
     [
-      { label: 'Markdown Document', value: 'markdown', description: 'Create a new markdown file with frontmatter' },
-      { label: 'Profile', value: 'profile', description: 'Create a new profile manifest' },
-      { label: 'Project', value: 'project', description: 'Initialize a new PageMD project' },
+      { label: 'Project', value: 'project', description: 'Full project folder with markdown, profile, and stubs' },
+      { label: 'Markdown with Profile', value: 'markdown-init', description: 'Markdown file + accompanying profile' },
+      { label: 'Markdown', value: 'markdown', description: 'Single markdown file with basic frontmatter' },
+      { label: 'Profile', value: 'profile', description: 'Profile manifest (.json)' },
+      { label: 'Style', value: 'style', description: 'Style CSS file' },
+      { label: 'Layout', value: 'layout', description: 'Layout CSS file (@page rules)' },
+      { label: 'Template', value: 'template', description: 'HTML template file' },
     ],
     {
       placeHolder: 'Select resource type to create',
@@ -51,32 +66,36 @@ export async function createDocument(
     return; // User cancelled
   }
 
-  // Step 3: Select template/base profile
+  // Step 3: Select template/base profile (only for types that need it)
   let template = 'standard_letter'; // Default
-  try {
-    const cwd = getWorkingDirectory();
-    const profiles = await listProfiles(cwd);
+  const needsProfile = ['project', 'markdown-init', 'profile'].includes(resourceType.value);
 
-    const selected = await vscode.window.showQuickPick(
-      profiles.map((p) => ({
-        label: p.id,
-        description: p.description,
-        value: p.id,
-      })),
-      {
-        placeHolder: 'Select base template/profile',
-        title: 'PageMD: Select Template',
+  if (needsProfile) {
+    try {
+      const cwd = getWorkingDirectory();
+      const profiles = await listProfiles(cwd);
+
+      const selected = await vscode.window.showQuickPick(
+        profiles.map((p) => ({
+          label: p.id,
+          description: p.description,
+          value: p.id,
+        })),
+        {
+          placeHolder: 'Select base template/profile',
+          title: 'PageMD: Select Template',
+        }
+      );
+
+      if (!selected) {
+        return; // User cancelled
       }
-    );
 
-    if (!selected) {
-      return; // User cancelled
+      template = selected.value;
+    } catch (err) {
+      // Profile listing failed - proceed with default
+      logStructured('WARN', 'command', 'create', 'warn', 'Could not list profiles, using default', { error: String(err) });
     }
-
-    template = selected.value;
-  } catch (err) {
-    // Profile listing failed - proceed with default
-    outputChannel.appendLine(`[PageMD] Could not list profiles, using default: ${err}`);
   }
 
   // Step 4: Execute CLI command
@@ -119,28 +138,59 @@ async function executeCreate(
   let args: string[];
   let expectedPath: string;
 
-  if (resourceType === 'project') {
-    // pagemd init --type project --name <name> --template <template>
-    args = ['init', '--type', 'project', '--name', name, '--template', template];
-    expectedPath = path.join(cwd, name, 'README.md'); // Open project README
-  } else if (resourceType === 'markdown') {
-    // pagemd init --type markdown --name <name> --template <template>
-    args = ['init', '--type', 'markdown', '--name', name, '--template', template];
-    expectedPath = path.join(cwd, `${name}.md`);
-  } else if (resourceType === 'profile') {
-    // pagemd create profile --source <template> --output <name>.json
-    args = ['create', 'profile', '--source', template, '--output', `${name}.json`];
-    expectedPath = path.join(cwd, `${name}.json`);
-  } else {
-    vscode.window.showErrorMessage(`PageMD: Unsupported resource type: ${resourceType}`);
-    return;
+  switch (resourceType) {
+    case 'project':
+      // pagemd init <name> --type project --template <template>
+      args = ['init', name, '--type', 'project', '--template', template];
+      expectedPath = path.join(cwd, name, `${name}.md`);
+      break;
+
+    case 'markdown-init':
+      // pagemd init <name> --type markdown --template <template> (creates md + profile)
+      args = ['init', name, '--type', 'markdown', '--template', template];
+      expectedPath = path.join(cwd, `${name}.md`);
+      break;
+
+    case 'markdown':
+      // pagemd create markdown --output <name>.md (creates only md)
+      args = ['create', 'markdown', '--output', `${name}.md`];
+      expectedPath = path.join(cwd, `${name}.md`);
+      break;
+
+    case 'profile':
+      // pagemd create profile --source <template> --output <name>.json
+      args = ['create', 'profile', '--source', template, '--output', `${name}.json`];
+      expectedPath = path.join(cwd, `${name}.json`);
+      break;
+
+    case 'style':
+      // pagemd create style --output <name>.css
+      args = ['create', 'style', '--output', `${name}.css`];
+      expectedPath = path.join(cwd, `${name}.css`);
+      break;
+
+    case 'layout':
+      // pagemd create layout --output <name>.css
+      args = ['create', 'layout', '--output', `${name}.css`];
+      expectedPath = path.join(cwd, `${name}.css`);
+      break;
+
+    case 'template':
+      // pagemd create template --output <name>.html
+      args = ['create', 'template', '--output', `${name}.html`];
+      expectedPath = path.join(cwd, `${name}.html`);
+      break;
+
+    default:
+      vscode.window.showErrorMessage(`PageMD: Unsupported resource type: ${resourceType}`);
+      return;
   }
 
-  outputChannel.appendLine(`\n${'='.repeat(60)}`);
-  outputChannel.appendLine(`[PageMD] Creating ${resourceType}: ${name}`);
-  outputChannel.appendLine(`[PageMD] Template: ${template}`);
-  outputChannel.appendLine(`[PageMD] Working directory: ${cwd}`);
-  outputChannel.appendLine(`${'='.repeat(60)}\n`);
+  outputChannel.appendLine('');
+  outputChannel.appendLine(`${'='.repeat(60)}`);
+  logStructured('INFO', 'command', 'create', 'start', `Creating ${resourceType}`, { name, template, cwd });
+  outputChannel.appendLine(`${'='.repeat(60)}`);
+  outputChannel.appendLine('');
 
   try {
     const result = await vscode.window.withProgress(
@@ -156,11 +206,13 @@ async function executeCreate(
           timeout: 30000,
           token,
           outputChannel,
+          env: buildCliEnv(),
         });
       }
     );
 
-    outputChannel.appendLine(`\n[PageMD] Exit code: ${result.code}`);
+    outputChannel.appendLine('');
+    logStructured('INFO', 'command', 'create', result.code === 0 ? 'success' : 'fail', 'Command completed', { exitCode: result.code });
 
     if (result.killed) {
       vscode.window.showWarningMessage('PageMD: Creation cancelled');
@@ -183,13 +235,12 @@ async function executeCreate(
           }
         });
     } else {
-      // Parse error from stderr
-      const errorMatch = result.stderr.match(/Error:\s*(.+)/i);
-      const errorMessage = errorMatch?.[1] || 'Unknown error';
+      // Extract clean error message
+      const cleanMessage = extractCleanMessage(result.stderr, result.stdout);
 
       vscode.window
         .showErrorMessage(
-          `PageMD: Creation failed - ${errorMessage}`,
+          `PageMD: ${cleanMessage}`,
           'Show Output'
         )
         .then((action) => {
@@ -200,7 +251,8 @@ async function executeCreate(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`\n[PageMD] Error: ${message}`);
+    outputChannel.appendLine('');
+    logStructured('ERROR', 'command', 'create', 'fail', 'Command error', { error: message });
 
     vscode.window
       .showErrorMessage(`PageMD: ${message}`, 'Show Output')

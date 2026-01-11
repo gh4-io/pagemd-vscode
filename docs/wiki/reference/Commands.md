@@ -23,13 +23,16 @@ Complete reference for all PageMD VS Code extension commands.
 | `pagemd.exportPdf` | Export to PDF | Quick PDF export |
 | `pagemd.exportAs` | Export Document... | Export with format selection |
 | `pagemd.openPreview` | Open Paged Preview | Open preview panel |
+| `pagemd.refreshPreview` | Refresh Preview | Manual refresh of preview panel |
 | `pagemd.selectProfile` | Select Profile | Switch rendering profile |
 | `pagemd.validate` | Validate Document | Run validation checks |
 | `pagemd.inspectDocument` | Inspect Document | Show resolved config |
 | `pagemd.createDocument` | Create Document... | Create from template |
+| `pagemd.init` | Initialize | Initialize project from folder |
 | `pagemd.selectFormats` | Select Output Formats | Pick formats for session |
 | `pagemd.setOutputPath` | Set Output Path | Set output directory for session |
 | `pagemd.resetSessionOverrides` | Reset Session Overrides | Clear all session state |
+| `pagemd.openDevTools` | Open DevTools | Open webview developer tools |
 
 ---
 
@@ -110,6 +113,50 @@ Open the paged preview panel for the current document.
 - Auto-refresh on save/type
 
 See [[Preview]] for detailed preview features.
+
+---
+
+### Refresh Preview
+
+**Command ID:** `pagemd.refreshPreview`
+**Keyboard:** None (assign in Keyboard Shortcuts)
+
+Manually refresh the preview panel. Useful when auto-refresh is disabled or to force a re-render.
+
+**Usage:**
+
+1. With preview panel open
+2. Access via:
+   - **More Actions menu (⋮)** on the preview tab
+   - **Right-click context menu** inside the preview
+   - **Command Palette:** `Ctrl+Shift+P` → "Refresh Preview"
+
+**Note:** Menu entries only appear when the preview panel is active.
+
+---
+
+### Open DevTools
+
+**Command ID:** `pagemd.openDevTools`
+**Keyboard:** None (assign in Keyboard Shortcuts)
+
+Open browser developer tools for the preview webview. Useful for debugging CSS, inspecting HTML structure, and viewing console logs.
+
+**Usage:**
+
+1. With preview panel open
+2. Access via:
+   - **More Actions menu (⋮)** on the preview tab
+   - **Right-click context menu** inside the preview
+   - **Command Palette:** `Ctrl+Shift+P` → "Open DevTools"
+
+**DevTools features:**
+
+- **Elements tab** - Inspect rendered HTML structure
+- **Console tab** - View Paged.js logs and errors
+- **Styles tab** - Debug CSS and layout issues
+
+**Note:** This opens VS Code's webview developer tools, the same as "Developer: Open Webview Developer Tools" but accessible directly from the preview.
 
 ---
 
@@ -218,6 +265,40 @@ Create a new document from a template.
 
 ---
 
+### PageMD: Initialize
+
+**Command ID:** `pagemd.init`
+**Keyboard:** None (assign in Keyboard Shortcuts)
+
+Initialize a new PageMD project, profile, or markdown document in a selected folder.
+
+**Usage:**
+
+1. Right-click a folder in the Explorer
+2. Select "PageMD: Initialize"
+3. Enter project name (default: `my-pagemd-project`)
+4. Select resource type: Project (recommended), Profile, Markdown, or Style
+
+**Note:** Currently only `project` type is fully implemented. Other types may return errors.
+
+**Created structure (type: project):**
+
+```
+<folder>/
+  <name>/
+    README.md
+    .pagemd/
+      profiles/
+```
+
+**Alternative access:**
+
+Available via Command Palette: `Ctrl+Shift+P` → "PageMD: Initialize"
+
+When invoked from Command Palette, initializes in the current workspace folder.
+
+---
+
 ## Session State Commands
 
 Commands for managing temporary session overrides. These affect the current VS Code session only and do not modify persistent settings.
@@ -307,11 +388,33 @@ For Markdown files, these appear in the editor title bar:
 - **Open Paged Preview** (eye icon)
 - **Export Document...** (export icon)
 
+### Preview Panel Menus
+
+When the preview panel is active, commands are available in two locations:
+
+**More Actions Menu (⋮):**
+
+Click the ⋮ icon in the preview tab title bar:
+
+- **Open DevTools** → Open webview developer tools
+- **Refresh Preview** → Force re-render of the preview
+
+**Right-Click Context Menu:**
+
+Right-click anywhere inside the preview content:
+
+- **Refresh Preview** → Force re-render of the preview
+- **Open DevTools** → Open webview developer tools
+
 ### Explorer Context Menu
 
 Right-click a Markdown file in Explorer:
 
 - **Export Document...** → Export with format selection
+
+Right-click a folder in Explorer:
+
+- **Initialize** → Initialize PageMD project in folder
 
 ---
 

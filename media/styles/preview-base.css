@@ -1,0 +1,71 @@
+/* Preview base styles - outer webview shell */
+/* Wrapped in @layer to ensure proper cascade priority */
+@layer pagemd-preview {
+
+/**
+ * VS Code Webview CSS Layers
+ *
+ * As of VS Code 1.103+ (August 2025), webview default styles are wrapped in
+ * @layer vscode-default. Our document CSS uses @layer declarations, so it
+ * properly overrides VS Code defaults without needing !important hacks.
+ *
+ * See: https://github.com/microsoft/vscode/issues/261430
+ *
+ * These base styles provide neutral defaults for the webview shell.
+ * Document CSS from the CLI (in higher-priority layers) overrides as needed.
+ */
+html {
+  min-height: 100%;
+  background-color: var(--pagemd-bg-color);
+  /* Break VS Code variable cascade - use CSS system defaults */
+  font-family: serif;
+  font-size: medium;
+  color: CanvasText;
+  /* Force scrollbar always visible to prevent layout shift on view toggle */
+  overflow-y: scroll;
+}
+
+body {
+  /* Neutral defaults - document CSS from CLI layers overrides these */
+  margin: 0;
+  padding: 0;
+  min-height: 100vh;
+  font-family: inherit;
+  font-size: inherit;
+  font-weight: normal;
+  line-height: normal;
+  color: inherit;
+  /* Don't set background - document CSS controls this */
+}
+
+/**
+ * Content wrapper - contains Paged.js output
+ * Canvas background set here since document CSS doesn't target this class.
+ * This ensures gray canvas shows even if .pagedjs_pages doesn't fill the area.
+ */
+.pagemd-content {
+  min-height: 100vh;
+  background-color: var(--pagemd-bg-color);
+}
+
+/**
+ * Browser view iframe (hidden by default)
+ * Used for browser-mode toggle to show raw HTML without Paged.js transformations
+ */
+.pagemd-browser-view {
+  display: none;
+  width: 100%;
+  height: 100vh;
+  border: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 1000;
+  background: white;
+}
+
+.pagemd-browser-view.active {
+  display: block;
+}
+
+} /* end @layer pagemd-preview */

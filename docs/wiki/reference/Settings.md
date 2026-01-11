@@ -20,9 +20,19 @@ Complete reference for all PageMD VS Code extension settings.
 ### pagemd.defaultProfile
 
 **Type:** `string`
-**Default:** `"standard_letter"`
+**Default:** `""` (blank)
 
-Default profile for rendering when no profile is specified in frontmatter.
+Extension-level default profile. Only used when the markdown file doesn't specify a `profile:` field in its frontmatter.
+
+**Profile Selection Hierarchy:**
+1. **Frontmatter** `profile:` field (highest priority - document author's choice)
+2. **Environment variable** `PAGEMD_PROFILE`
+3. **This setting** (extension fallback)
+4. **Built-in default** `standard_letter` (when all above are blank)
+
+**Leave blank** (recommended) to respect frontmatter profiles and let the CLI use its default.
+
+**Example:** Set an extension-wide default that applies to all documents without frontmatter profiles:
 
 ```json
 "pagemd.defaultProfile": "technical_report"
@@ -82,37 +92,25 @@ When to show the output panel:
 
 ## Preview
 
-### pagemd.autoRefreshPreview
-
-**Type:** `boolean`
-**Default:** `true`
-
-Automatically refresh preview when the file changes.
-
-```json
-"pagemd.autoRefreshPreview": true
-```
-
----
-
-### pagemd.previewTrigger
+### pagemd.previewRefresh
 
 **Type:** `string`
-**Default:** `"onSave"`
-**Options:** `"onSave"`, `"onType"`
+**Default:** `"manual"`
+**Options:** `"manual"`, `"onSave"`, `"live"`
 
 When to refresh the preview:
 
 | Value | Behavior |
 |-------|----------|
+| `manual` | Only refresh via Refresh Preview command |
 | `onSave` | Refresh when file is saved |
-| `onType` | Refresh as you type (debounced) |
+| `live` | Refresh as you type (debounced, no disk I/O) |
 
 ```json
-"pagemd.previewTrigger": "onType"
+"pagemd.previewRefresh": "live"
 ```
 
-**Note:** `onType` provides faster feedback but uses more resources.
+**Live mode** uses stdin to pipe document content directly to the CLI, enabling true live preview without saving the file to disk. This preserves your undo history and dirty state.
 
 ---
 
@@ -163,26 +161,30 @@ Position of first page in book spread view. `right` matches typical book layout 
 ### pagemd.preview.pageGap
 
 **Type:** `string` (CSS length)
-**Default:** `"5mm"`
+**Default:** `"5mm"` (when empty)
 
-Gap between pages in preview.
+Vertical gap between page rows. Applies in both single-page and book spread modes.
 
 ```json
 "pagemd.preview.pageGap": "10mm"
 ```
+
+Leave empty to use the default (5mm).
 
 ---
 
 ### pagemd.preview.spreadGap
 
 **Type:** `string` (CSS length)
-**Default:** `"15mm"`
+**Default:** `"5mm"` (when empty)
 
-Vertical gap between page spreads in two-column book view.
+Horizontal gap between left and right pages in book spread mode. Has no effect in single-page mode.
 
 ```json
-"pagemd.preview.spreadGap": "20mm"
+"pagemd.preview.spreadGap": "8mm"
 ```
+
+Leave empty to use the default (5mm).
 
 ---
 
@@ -285,6 +287,64 @@ Color for margin box highlighting.
 
 ---
 
+### pagemd.preview.debugLevel
+
+**Type:** `string`
+**Default:** `""` (no debug)
+**Options:** `""`, `"basic"`, `"layout"`, `"context"`, `"combined"`, `"full"`
+
+Preview panel debug visualization level. Shows colored overlays on layout containers to help debug spacing and alignment issues.
+
+| Level | Visual Elements |
+|-------|-----------------|
+| `""` | No debug visuals (default) |
+| `basic` | Container outlines, page gaps, spread gaps |
+| `layout` | Basic + margins, bleeds, content area, footnote area, headers/footers |
+| `context` | Semantic elements (article, section, aside, figure, blockquote, nav, header, footer) with labeled boxes |
+| `combined` | Layout + Context |
+| `full` | All debug visualizations |
+
+```json
+"pagemd.preview.debugLevel": "basic"
+```
+
+**Color Legend (Basic tier):**
+
+| Container | Color | Purpose |
+|-----------|-------|---------|
+| `.pagemd-content` | Red tint + dashed outline | Content wrapper |
+| `.pagedjs_pages` | Green tint + dashed outline | Pages container |
+| `.pagemd-page-wrapper` | Blue tint + dashed outline | Page wrapper |
+| `.pagedjs_page` | Orange tint + dashed outline | Individual page |
+| Page gaps | Green stripes | Vertical space between rows |
+| Spread gaps | Purple stripes | Horizontal space in book spread |
+
+**Color Legend (Context tier):**
+
+| Element | Color | Border Style | Label Position |
+|---------|-------|--------------|----------------|
+| `<article>` | Cyan | 3px Solid | Top-right |
+| `<section>` | Lime | 2px Dashed | Top-left (staggered) |
+| `<aside>` | Yellow | 2px Dotted | Top-right |
+| `<figure>` | Pink | 2px Solid | Top-left (staggered) |
+| `<blockquote>` | Orange | 2px Dashed | Top-left (staggered) |
+| `<nav>` | Violet | 2px Solid | Top-left |
+| `<header>` | Teal | 2px Dotted | Top-left |
+| `<footer>` | Coral | 2px Dotted | Bottom-left |
+| `<div>` (in article) | Silver | 1px Dashed | Top-left (staggered) |
+
+**Features:**
+- No background fill/tint - borders only for clarity
+- Top-level `<article>` label positioned top-right
+- Nested elements have staggered labels (100px increments left-to-right)
+- Supports up to 4 levels of nesting for sections, blockquotes, and divs
+
+A legend appears in the bottom-left corner showing the active tier.
+
+<!-- SCREENSHOT: debug-visualization.png - Preview with debug colors enabled -->
+
+---
+
 ## Rendering
 
 Settings that affect how the CLI renders documents. These map directly to CLI environment variables.
@@ -334,32 +394,6 @@ Enable Mermaid diagram rendering for ` ```mermaid ` code blocks.
 ```
 
 Disable if you don't use Mermaid diagrams or want faster rendering. Maps to `PAGEMD_MERMAID` env var.
-
----
-
-### pagemd.logLevel
-
-**Type:** `string`
-**Default:** `"WARN"`
-**Options:** `"TRACE"`, `"DEBUG"`, `"INFO"`, `"WARN"`, `"ERROR"`, `"FATAL"`, `"OFF"`
-
-CLI logging verbosity level.
-
-| Level | Description |
-|-------|-------------|
-| `TRACE` | Everything including internal details |
-| `DEBUG` | Diagnostic information |
-| `INFO` | General operational messages |
-| `WARN` | Warnings (default) |
-| `ERROR` | Errors only |
-| `FATAL` | Critical failures only |
-| `OFF` | No logging |
-
-```json
-"pagemd.logLevel": "DEBUG"
-```
-
-Maps to `PAGEMD_LOG_LEVEL` env var.
 
 ---
 
@@ -423,6 +457,22 @@ PDF generation timeout (matches CLI default: 30 seconds). Increase for large or 
 
 ---
 
+### pagemd.previewTimeout
+
+**Type:** `number` (milliseconds)
+**Default:** `30000`
+**Range:** `5000` - `300000`
+
+Preview generation timeout. Controls how long the preview panel waits for CLI to generate HTML before timing out. Increase for large or complex documents with many pages.
+
+```json
+"pagemd.previewTimeout": 60000
+```
+
+**Note:** This is separate from `pagemd.pdfTimeout` which only affects PDF export operations.
+
+---
+
 ### pagemd.pagedJsMode
 
 **Type:** `string`
@@ -447,29 +497,122 @@ Paged.js execution mode:
 **Type:** `boolean`
 **Default:** `true`
 
-Run browser in headless mode. Disable for debugging browser rendering issues.
+Run browser in headless mode. When disabled, the browser window stays visible after rendering completes, allowing you to inspect the rendered output with DevTools.
 
 ```json
 "pagemd.headless": false
 ```
 
-**Note:** Non-headless mode shows the browser window during rendering.
+**Behavior (non-headless mode):**
+- PDF/HTML renders normally
+- **Tab stays open** for inspection (use DevTools F12)
+- **Browser window remains** as an orphaned process
+- **CLI process exits cleanly** (no timeout)
+- Console message: `📋 Browser left open for inspection. Close it manually when done.`
+
+**When to use:**
+- Debugging CSS layout issues
+- Inspecting Paged.js output
+- Checking margin/page-break behavior
+- Diagnosing rendering problems
+
+**Close browser manually** when done - it won't close automatically.
+
+Maps to `PAGEMD_HEADLESS` environment variable.
 
 ---
 
-### pagemd.debugMode
+### pagemd.cliLogLevel
 
-**Type:** `boolean`
-**Default:** `false`
+**Type:** `string`
+**Default:** `""` (disabled)
+**Options:** `""`, `"FATAL"`, `"ERROR"`, `"WARN"`, `"INFO"`, `"DEBUG"`, `"TRACE"`
 
-Enable debug artifacts and verbose logging. When enabled:
+CLI subprocess logging level. Controls CLI output visibility in the PageMD output channel.
 
-- Debug artifacts are saved alongside outputs
-- Verbose logging appears in Output panel
-- Additional diagnostic information in preview
+**This setting controls two things:**
+
+1. **Build output visibility** - Whether CLI build progress appears in the output channel
+2. **Build output format** - Compact summary vs full debug report
+
+| Level | Build Output | Description |
+|-------|--------------|-------------|
+| `""` (empty) | Hidden | No CLI output (default, cleanest) |
+| `FATAL`-`INFO` | Compact | `timestamp [PageMD-CLI] Processing: filename.md` with summary |
+| `DEBUG`-`TRACE` | Full report | Compact header + Loaded Resources + Directory Context |
+
+**Compact output format (WARN recommended for clean output):**
+```
+2026-01-11 13:57:38.440 [PageMD-CLI] Processing: 01-basic-document.md
+	✓ Success: 1 outputs created
+2026-01-11 13:57:38.682 [PageMD-CLI] Build Summary:
+	Total files: 1
+	Successful: 1
+	Failed: 0
+	Total outputs: 1
+	Duration: 0.25s
+```
+
+**DEBUG output format:**
+```
+2026-01-11 13:57:38.440 [PageMD-CLI] Processing: 01-basic-document.md
+	✓ Success: 1 outputs created
+2026-01-11 13:57:38.682 [PageMD-CLI] Build Summary:
+======================================================================
+  DEBUG MODE ACTIVE
+======================================================================
+
+Build Summary:
+  Total files: 1
+  ...
+
+Loaded Resources:
+  Styles (merge order):
+     [base] styles/base.css
+     ...
+----------------------------------------------------------------------
+```
+
+**Recommendation:**
+- **For everyday use:** Leave empty `""` (no CLI output, only extension messages)
+- **For clean CLI output:** Set to `"WARN"` (shows build progress without internal diagnostics)
+- **For debugging:** Set to `"DEBUG"` (shows full resource loading report)
 
 ```json
-"pagemd.debugMode": true
+"pagemd.cliLogLevel": "WARN"
+```
+
+Maps to `PAGEMD_LOG_LEVEL` environment variable passed to CLI.
+
+---
+
+### pagemd.extensionLogLevel
+
+**Type:** `string`
+**Default:** `"INFO"`
+**Options:** `""`, `"FATAL"`, `"ERROR"`, `"WARN"`, `"INFO"`, `"DEBUG"`, `"TRACE"`
+
+Extension internal logging level. Controls extension diagnostic messages in the PageMD output channel.
+
+| Level | Description |
+|-------|-------------|
+| `""` | Disabled (no extension logs) |
+| `FATAL` | Only fatal errors |
+| `ERROR` | Errors and fatal |
+| `WARN` | Warnings and above |
+| `INFO` | Informational messages (default) |
+| `DEBUG` | Detailed debug info |
+| `TRACE` | All trace logs |
+
+**Extension messages look like:**
+```
+2026-01-11 13:02:17.348 [PageMD-Ext] Preview refresh mode: manual
+2026-01-11 13:02:17.348 [PageMD-Ext] Refreshing preview: document.md
+2026-01-11 13:02:21.654 [PageMD-Ext] Preview rendered: 23 pages
+```
+
+```json
+"pagemd.extensionLogLevel": "DEBUG"
 ```
 
 ---
@@ -478,17 +621,16 @@ Enable debug artifacts and verbose logging. When enabled:
 
 | Setting | Type | Default | Group |
 |---------|------|---------|-------|
-| `pagemd.defaultProfile` | string | `"standard_letter"` | General |
+| `pagemd.defaultProfile` | string | `""` | General |
 | `pagemd.cliPath` | string | `""` | General |
 | `pagemd.outputPath` | string | `""` | General |
 | `pagemd.showOutputPanelOn` | string | `"onError"` | General |
-| `pagemd.autoRefreshPreview` | boolean | `true` | Preview |
-| `pagemd.previewTrigger` | string | `"onSave"` | Preview |
+| `pagemd.previewRefresh` | string | `"manual"` | Preview |
 | `pagemd.preview.emulatePageLayout` | boolean | `true` | Preview: Layout |
 | `pagemd.preview.twoColumnSpread` | boolean | `false` | Preview: Layout |
 | `pagemd.preview.firstPagePosition` | string | `"right"` | Preview: Layout |
-| `pagemd.preview.pageGap` | string | `"5mm"` | Preview: Layout |
-| `pagemd.preview.spreadGap` | string | `"15mm"` | Preview: Layout |
+| `pagemd.preview.pageGap` | string | `""` (5mm) | Preview: Layout |
+| `pagemd.preview.spreadGap` | string | `""` (5mm) | Preview: Layout |
 | `pagemd.preview.zoom` | number | `100` | Preview: Layout |
 | `pagemd.preview.showDimensions` | boolean | `true` | Preview: Layout |
 | `pagemd.preview.dimensionUnit` | string | `"in"` | Preview: Layout |
@@ -496,17 +638,18 @@ Enable debug artifacts and verbose logging. When enabled:
 | `pagemd.preview.backgroundColor` | string | `"#777777"` | Preview: Appearance |
 | `pagemd.preview.highlightMargins` | boolean | `true` | Preview: Appearance |
 | `pagemd.preview.marginColor` | string | `"#0ff"` | Preview: Appearance |
+| `pagemd.preview.debugLevel` | string | `""` | Preview: Appearance |
 | `pagemd.outputFormats` | array | `["html", "pdf"]` | Rendering |
 | `pagemd.syntaxHighlight` | boolean | `true` | Rendering |
 | `pagemd.mermaidDiagrams` | boolean | `true` | Rendering |
-| `pagemd.logLevel` | string | `"WARN"` | Rendering |
 | `pagemd.browserPath` | string | `""` | Rendering |
 | `pagemd.keepBrowserAlive` | boolean | `false` | Rendering |
 | `pagemd.jpegQuality` | number | `90` | Export |
 | `pagemd.pdfTimeout` | number | `30000` | Export |
+| `pagemd.previewTimeout` | number | `30000` | Preview |
 | `pagemd.pagedJsMode` | string | `"browser"` | Export |
 | `pagemd.headless` | boolean | `true` | Export |
-| `pagemd.debugMode` | boolean | `false` | Export |
+| `pagemd.cliDebugLevel` | string | `""` | Export |
 
 ---
 
