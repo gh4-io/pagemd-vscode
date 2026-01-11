@@ -1,0 +1,24 @@
+/* Error display styles - extracted from preview-panel.ts */
+/* Wrapped in @layer to ensure proper cascade priority */
+@layer pagemd-preview {
+
+body {
+  font-family: var(--vscode-font-family);
+  padding: 20px;
+  color: var(--vscode-errorForeground);
+}
+
+.error-icon {
+  font-size: 48px;
+  margin-bottom: 16px;
+}
+
+.error-message {
+  background: var(--vscode-inputValidation-errorBackground);
+  border: 1px solid var(--vscode-inputValidation-errorBorder);
+  padding: 12px;
+  border-radius: 4px;
+  white-space: pre-wrap;
+}
+
+} /* end @layer pagemd-preview */

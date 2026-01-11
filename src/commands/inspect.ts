@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { runPageMD } from '../utils/cli-wrapper';
+import { runPageMD, buildCliEnv } from '../utils/cli-wrapper';
+import { extractCleanMessage } from '../utils/cli-message-extractor';
 import { ProfileState } from '../providers/profile-picker';
+import { logStructured } from '../extension';
 
 /**
  * Inspect the active markdown document configuration.
@@ -35,10 +37,11 @@ export async function inspectDocument(
   // Build CLI arguments
   const args = ['inspect', filePath, '--json', '-p', profile];
 
-  outputChannel.appendLine(`\n${'='.repeat(60)}`);
-  outputChannel.appendLine(`[PageMD] Inspecting: ${fileName}`);
-  outputChannel.appendLine(`[PageMD] Profile: ${profile}`);
-  outputChannel.appendLine(`${'='.repeat(60)}\n`);
+  outputChannel.appendLine('');
+  outputChannel.appendLine(`${'='.repeat(60)}`);
+  logStructured('INFO', 'command', 'inspect', 'start', 'Inspecting document', { file: fileName, profile });
+  outputChannel.appendLine(`${'='.repeat(60)}`);
+  outputChannel.appendLine('');
 
   try {
     const result = await vscode.window.withProgress(
@@ -52,11 +55,13 @@ export async function inspectDocument(
           cwd,
           timeout: 30000,
           outputChannel,
+          env: buildCliEnv(),
         });
       }
     );
 
-    outputChannel.appendLine(`\n[PageMD] Exit code: ${result.code}`);
+    outputChannel.appendLine('');
+    logStructured('INFO', 'command', 'inspect', result.code === 0 ? 'success' : 'fail', 'Command completed', { exitCode: result.code });
 
     if (result.code === 0) {
       // Parse JSON output
@@ -82,18 +87,18 @@ export async function inspectDocument(
           }
         });
       } catch (parseErr) {
-        outputChannel.appendLine(`\n[PageMD] Failed to parse JSON output`);
+        outputChannel.appendLine('');
+        logStructured('ERROR', 'command', 'inspect', 'fail', 'Failed to parse JSON output', { error: String(parseErr) });
         outputChannel.appendLine(result.stdout);
         vscode.window.showErrorMessage('PageMD: Failed to parse inspection output');
       }
     } else {
-      // Parse error from stderr
-      const errorMatch = result.stderr.match(/Error:\s*(.+)/i);
-      const errorMessage = errorMatch?.[1] || 'Unknown error';
+      // Extract clean error message
+      const cleanMessage = extractCleanMessage(result.stderr, result.stdout);
 
       vscode.window
         .showErrorMessage(
-          `PageMD: Inspection failed - ${errorMessage}`,
+          `PageMD: ${cleanMessage}`,
           'Show Output'
         )
         .then((action) => {
@@ -104,7 +109,8 @@ export async function inspectDocument(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`\n[PageMD] Error: ${message}`);
+    outputChannel.appendLine('');
+    logStructured('ERROR', 'command', 'inspect', 'fail', 'Command error', { error: message });
 
     vscode.window
       .showErrorMessage(`PageMD: ${message}`, 'Show Output')

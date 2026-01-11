@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { ProfileState, showProfilePicker } from '../providers/profile-picker';
 import { FormatState } from '../providers/format-state';
+import { logStructured } from '../extension';
 
 /**
  * Select profile command handler.
@@ -23,7 +24,7 @@ export async function selectProfile(
   }
 
   const currentProfile = profileState.getSelectedProfile();
-  outputChannel.appendLine(`[PageMD] Current profile: ${currentProfile}`);
+  logStructured('INFO', 'command', 'select-profile', 'info', 'Current profile', { profile: currentProfile });
 
   const selected = await showProfilePicker(cwd, currentProfile);
 
@@ -44,7 +45,7 @@ export async function selectProfile(
   updateStatusBar(statusBarItem, selected.id, formatState);
 
   // Show confirmation
-  outputChannel.appendLine(`[PageMD] Profile changed: ${currentProfile} → ${selected.id}`);
+  logStructured('INFO', 'command', 'select-profile', 'success', 'Profile changed', { from: currentProfile, to: selected.id });
   vscode.window.showInformationMessage(`PageMD: Profile set to "${selected.id}"`);
 }
 

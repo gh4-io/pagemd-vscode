@@ -3,6 +3,7 @@ import { spawn, ChildProcess, SpawnOptions } from 'child_process';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
+import { logStructured } from '../extension';
 
 /**
  * Result from CLI command execution
@@ -24,6 +25,10 @@ export interface CliConfig {
   token?: vscode.CancellationToken;
   outputChannel?: vscode.OutputChannel;
   env?: Record<string, string>;
+  /** Content to pipe to stdin (for --stdin mode) */
+  stdin?: string;
+  /** Suppress stdout from output channel (e.g., when stdout contains HTML) */
+  suppressStdout?: boolean;
 }
 
 /**
@@ -36,7 +41,9 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
 
   // 1) User-configured path
   if (customCliPath) {
-    outputChannel?.appendLine(`[PageMD] Using custom CLI path: ${customCliPath}`);
+    if (outputChannel) {
+      logStructured('INFO', 'cli-wrapper', 'resolve', 'success', 'Using custom CLI path', { path: customCliPath });
+    }
     return { command: customCliPath, prependArgs: [] };
   }
 
@@ -53,7 +60,9 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
   const bundledCliPath = path.resolve(extensionRoot, 'bin', 'pagemd-cli.mjs');
 
   if (fs.existsSync(bundledCliPath)) {
-    outputChannel?.appendLine(`[PageMD] Using bundled CLI: ${bundledCliPath}`);
+    if (outputChannel) {
+      logStructured('INFO', 'cli-wrapper', 'resolve', 'success', 'Using bundled CLI', { path: bundledCliPath });
+    }
     return { command: 'node', prependArgs: [bundledCliPath] };
   }
 
@@ -62,7 +71,9 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
   const localCliPath = path.resolve(extensionRoot, '..', 'pagemd', 'apps', 'cli', 'src', 'index.js');
 
   if (fs.existsSync(localCliPath)) {
-    outputChannel?.appendLine(`[PageMD] Using local CLI: ${localCliPath}`);
+    if (outputChannel) {
+      logStructured('INFO', 'cli-wrapper', 'resolve', 'success', 'Using local CLI', { path: localCliPath });
+    }
     return { command: 'node', prependArgs: [localCliPath] };
   }
 
@@ -72,20 +83,26 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
     // Check if we're in the PageMD monorepo
     const workspaceCliPath = path.join(workspaceFolder.uri.fsPath, 'apps', 'cli', 'src', 'index.js');
     if (fs.existsSync(workspaceCliPath)) {
-      outputChannel?.appendLine(`[PageMD] Using workspace CLI: ${workspaceCliPath}`);
+      if (outputChannel) {
+        logStructured('INFO', 'cli-wrapper', 'resolve', 'success', 'Using workspace CLI', { path: workspaceCliPath });
+      }
       return { command: 'node', prependArgs: [workspaceCliPath] };
     }
 
     // Check for node_modules/.bin/pagemd
     const binPath = path.join(workspaceFolder.uri.fsPath, 'node_modules', '.bin', 'pagemd');
     if (fs.existsSync(binPath)) {
-      outputChannel?.appendLine(`[PageMD] Using node_modules CLI: ${binPath}`);
+      if (outputChannel) {
+        logStructured('INFO', 'cli-wrapper', 'resolve', 'success', 'Using node_modules CLI', { path: binPath });
+      }
       return { command: binPath, prependArgs: [] };
     }
   }
 
   // 5) Fallback to npx
-  outputChannel?.appendLine('[PageMD] Falling back to npx pagemd');
+  if (outputChannel) {
+    logStructured('WARN', 'cli-wrapper', 'resolve', 'fallback', 'Using npx pagemd');
+  }
   return { command: 'npx', prependArgs: ['pagemd'] };
 }
 
@@ -96,21 +113,27 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
  * When all settings are at defaults, this returns empty object, so CLI runs
  * with its defaults and frontmatter/profile can take full control.
  *
- * CLI Defaults Reference:
+ * CLI Defaults Reference (from packages/core/src/env.js):
  * - PAGEMD_LOG_LEVEL: 'WARN'
+ * - PAGEMD_DEBUG: false (disabled)
  * - PAGEMD_SYNTAX_HIGHLIGHT: true (enabled)
  * - PAGEMD_MERMAID: true (enabled)
  * - PAGEMD_BROWSER_PATH: null (auto-detect)
  * - PAGEMD_KEEP_CHROME: false (disabled)
+ * - PAGEMD_HEADLESS: true (enabled)
+ * - PAGEMD_PAGEDJS_MODE: 'browser'
+ * - PAGEMD_TIMEOUT: 30000
+ * - PAGEMD_JPEG_QUALITY: 90
  */
 export function buildCliEnv(): Record<string, string> {
   const config = vscode.workspace.getConfiguration('pagemd');
   const env: Record<string, string> = {};
 
-  // Log level - only pass if not default 'WARN'
-  const logLevel = config.get<string>('logLevel', 'WARN');
-  if (logLevel !== 'WARN') {
-    env.PAGEMD_LOG_LEVEL = logLevel;
+  // CLI log level
+  // Empty string = disabled (CLI production default). Non-empty = set log level.
+  const cliLogLevel = config.get<string>('cliLogLevel', '');
+  if (cliLogLevel) {
+    env.PAGEMD_LOG_LEVEL = cliLogLevel;
   }
 
   // Syntax highlighting - only pass if disabled (default is true/enabled)
@@ -137,6 +160,31 @@ export function buildCliEnv(): Record<string, string> {
     env.PAGEMD_KEEP_CHROME = '1';
   }
 
+  // Headless mode - only pass if disabled (default is true/enabled)
+  // When disabled, browser stays open for inspection but process exits normally
+  const headless = config.get<boolean>('headless', true);
+  if (!headless) {
+    env.PAGEMD_HEADLESS = '0';
+  }
+
+  // Paged.js mode - only pass if not default 'browser'
+  const pagedJsMode = config.get<string>('pagedJsMode', 'browser');
+  if (pagedJsMode !== 'browser') {
+    env.PAGEMD_PAGEDJS_MODE = pagedJsMode;
+  }
+
+  // PDF timeout - only pass if not default 30000
+  const pdfTimeout = config.get<number>('pdfTimeout', 30000);
+  if (pdfTimeout !== 30000) {
+    env.PAGEMD_TIMEOUT = String(pdfTimeout);
+  }
+
+  // JPEG quality - only pass if not default 90
+  const jpegQuality = config.get<number>('jpegQuality', 90);
+  if (jpegQuality !== 90) {
+    env.PAGEMD_JPEG_QUALITY = String(jpegQuality);
+  }
+
   return env;
 }
 
@@ -148,7 +196,7 @@ export function buildCliEnv(): Record<string, string> {
  * Supports timeout and VS Code CancellationToken.
  */
 export function runPageMD(config: CliConfig): Promise<CliResult> {
-  const { args, cwd, timeout = 30000, token, outputChannel, env: customEnv } = config;
+  const { args, cwd, timeout = 30000, token, outputChannel, env: customEnv, stdin: stdinContent, suppressStdout = false } = config;
 
   return new Promise((resolve, reject) => {
     let stdout = '';
@@ -175,25 +223,41 @@ export function runPageMD(config: CliConfig): Promise<CliResult> {
     };
 
     // Log the full command being executed
-    outputChannel?.appendLine(`[PageMD] Executing: ${command} ${fullArgs.join(' ')}`);
-    outputChannel?.appendLine(`[PageMD] CWD: ${cwd}`);
-    if (customEnv && Object.keys(customEnv).length > 0) {
-      outputChannel?.appendLine(`[PageMD] Custom env: ${JSON.stringify(customEnv)}`);
+    if (outputChannel) {
+      logStructured('DEBUG', 'cli-wrapper', 'execute', 'start', 'Executing CLI', { command, args: fullArgs });
+      logStructured('DEBUG', 'cli-wrapper', 'execute', 'info', 'Working directory', { cwd });
+      if (customEnv && Object.keys(customEnv).length > 0) {
+        logStructured('INFO', 'cli-wrapper', 'execute', 'info', 'Custom environment', customEnv);
+      }
     }
 
     try {
       child = spawn(command, fullArgs, options);
     } catch (err) {
-      outputChannel?.appendLine(`[PageMD] Spawn error: ${err}`);
+      if (outputChannel) {
+        logStructured('ERROR', 'cli-wrapper', 'execute', 'fail', 'Process spawn failed', { error: String(err) });
+      }
       reject(err);
       return;
+    }
+
+    // Pipe stdin content if provided (for --stdin mode)
+    if (stdinContent && child.stdin) {
+      child.stdin.write(stdinContent, 'utf-8');
+      child.stdin.end();
+      if (outputChannel) {
+        logStructured('DEBUG', 'cli-wrapper', 'execute', 'info', 'Piped stdin', { bytes: stdinContent.length });
+      }
     }
 
     // Stream stdout
     child.stdout?.on('data', (data: Buffer) => {
       const text = data.toString();
       stdout += text;
-      outputChannel?.append(text);
+      // Only append to output channel if not suppressed (e.g., when stdout contains HTML)
+      if (!suppressStdout) {
+        outputChannel?.append(text);
+      }
     });
 
     // Stream stderr
@@ -235,7 +299,10 @@ export function runPageMD(config: CliConfig): Promise<CliResult> {
       timeoutId = setTimeout(() => {
         killed = true;
         killChild();
-        outputChannel?.appendLine(`\n[PageMD] Process timed out after ${timeout}ms`);
+        if (outputChannel) {
+          outputChannel.appendLine(''); // blank line for readability
+          logStructured('ERROR', 'cli-wrapper', 'execute', 'fail', 'Process timed out', { timeout });
+        }
       }, timeout);
     }
 

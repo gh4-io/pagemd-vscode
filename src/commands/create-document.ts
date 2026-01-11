@@ -1,7 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { runPageMD } from '../utils/cli-wrapper';
+import { runPageMD, buildCliEnv } from '../utils/cli-wrapper';
 import { listProfiles } from '../utils/cli-wrapper';
+import { extractCleanMessage } from '../utils/cli-message-extractor';
+import { logStructured } from '../extension';
 
 /**
  * Create a new PageMD document, profile, or project.
@@ -76,7 +78,7 @@ export async function createDocument(
     template = selected.value;
   } catch (err) {
     // Profile listing failed - proceed with default
-    outputChannel.appendLine(`[PageMD] Could not list profiles, using default: ${err}`);
+    logStructured('WARN', 'command', 'create', 'warn', 'Could not list profiles, using default', { error: String(err) });
   }
 
   // Step 4: Execute CLI command
@@ -136,11 +138,11 @@ async function executeCreate(
     return;
   }
 
-  outputChannel.appendLine(`\n${'='.repeat(60)}`);
-  outputChannel.appendLine(`[PageMD] Creating ${resourceType}: ${name}`);
-  outputChannel.appendLine(`[PageMD] Template: ${template}`);
-  outputChannel.appendLine(`[PageMD] Working directory: ${cwd}`);
-  outputChannel.appendLine(`${'='.repeat(60)}\n`);
+  outputChannel.appendLine('');
+  outputChannel.appendLine(`${'='.repeat(60)}`);
+  logStructured('INFO', 'command', 'create', 'start', `Creating ${resourceType}`, { name, template, cwd });
+  outputChannel.appendLine(`${'='.repeat(60)}`);
+  outputChannel.appendLine('');
 
   try {
     const result = await vscode.window.withProgress(
@@ -156,11 +158,13 @@ async function executeCreate(
           timeout: 30000,
           token,
           outputChannel,
+          env: buildCliEnv(),
         });
       }
     );
 
-    outputChannel.appendLine(`\n[PageMD] Exit code: ${result.code}`);
+    outputChannel.appendLine('');
+    logStructured('INFO', 'command', 'create', result.code === 0 ? 'success' : 'fail', 'Command completed', { exitCode: result.code });
 
     if (result.killed) {
       vscode.window.showWarningMessage('PageMD: Creation cancelled');
@@ -183,13 +187,12 @@ async function executeCreate(
           }
         });
     } else {
-      // Parse error from stderr
-      const errorMatch = result.stderr.match(/Error:\s*(.+)/i);
-      const errorMessage = errorMatch?.[1] || 'Unknown error';
+      // Extract clean error message
+      const cleanMessage = extractCleanMessage(result.stderr, result.stdout);
 
       vscode.window
         .showErrorMessage(
-          `PageMD: Creation failed - ${errorMessage}`,
+          `PageMD: ${cleanMessage}`,
           'Show Output'
         )
         .then((action) => {
@@ -200,7 +203,8 @@ async function executeCreate(
     }
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    outputChannel.appendLine(`\n[PageMD] Error: ${message}`);
+    outputChannel.appendLine('');
+    logStructured('ERROR', 'command', 'create', 'fail', 'Command error', { error: message });
 
     vscode.window
       .showErrorMessage(`PageMD: ${message}`, 'Show Output')

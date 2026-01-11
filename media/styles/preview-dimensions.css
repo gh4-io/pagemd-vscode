@@ -1,0 +1,99 @@
+/* Dimension label styles - page measurements */
+/* Wrapped in @layer to ensure proper cascade priority */
+@layer pagemd-preview {
+
+/* Page wrapper for positioning context - extra margin for labels */
+.pagemd-page-wrapper {
+  position: relative;
+  display: inline-block;
+  margin: 60px 80px 80px 80px; /* top right bottom left - room for labels */
+}
+
+/* Base label style - readable dark text */
+.pagemd-label {
+  position: absolute;
+  font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 12px;
+  color: #202020;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+/* Top label: centered above page */
+.pagemd-label-top {
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 8px;
+  text-align: center;
+}
+
+/* Left label: centered left of page */
+.pagemd-label-left {
+  right: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-right: 12px;
+  text-align: right;
+}
+
+/* Right label: centered right of page */
+.pagemd-label-right {
+  left: 100%;
+  top: 50%;
+  transform: translateY(-50%);
+  margin-left: 12px;
+  text-align: left;
+}
+
+/* Bottom label: centered below page */
+.pagemd-label-bottom {
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-top: 8px;
+  text-align: center;
+}
+
+/* Info panel below bottom label */
+.pagemd-info-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  margin-top: 35px;
+  padding: 8px 12px;
+  font-family: ui-monospace, 'SF Mono', Monaco, 'Cascadia Code', monospace;
+  font-size: 12px;
+  color: #202020;
+  border-top: 1px dashed #ccc;
+  text-align: center;
+}
+
+.pagemd-info-item { }
+.pagemd-info-sep {
+  margin: 0 8px;
+  opacity: 0.5;
+}
+
+/* Dimension and margin sub-labels */
+.pagemd-dim {
+  font-weight: 500;
+  display: block;
+}
+.pagemd-margin {
+  font-size: 11px;
+  opacity: 0.85;
+  margin-top: 2px;
+  display: block;
+}
+
+/* Dark theme adjustments */
+.vscode-dark .pagemd-label { color: #e0e0e0; }
+.vscode-dark .pagemd-info-panel { color: #e0e0e0; border-color: #555; }
+
+/* High contrast theme */
+.vscode-high-contrast .pagemd-label { color: #fff; }
+.vscode-high-contrast .pagemd-info-panel { color: #fff; border-color: #fff; }
+
+} /* end @layer pagemd-preview */

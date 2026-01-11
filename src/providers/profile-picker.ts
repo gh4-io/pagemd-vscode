@@ -19,7 +19,7 @@ export class ProfileState {
 
   /**
    * Get currently selected profile ID.
-   * Falls back to configuration default.
+   * Falls back to configuration default (empty string = use frontmatter/CLI default).
    */
   getSelectedProfile(): string {
     const saved = this.context.workspaceState.get<string>(ProfileState.KEY);
@@ -27,7 +27,7 @@ export class ProfileState {
       return saved;
     }
     const config = vscode.workspace.getConfiguration('pagemd');
-    return config.get<string>('defaultProfile', 'standard_letter');
+    return config.get<string>('defaultProfile', '');
   }
 
   /**

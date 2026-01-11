@@ -50,6 +50,19 @@ for (const dir of staticDirs) {
   }
 }
 
+// Copy Paged.js polyfill to vendor/ for bundled mode
+// pagedjs.js checks for vendor/paged.polyfill.js at same level as CLI bundle
+const vendorDir = path.join(outDir, 'vendor');
+fs.mkdirSync(vendorDir, { recursive: true });
+const pagedJsSource = path.join(cliRoot, 'node_modules/pagedjs/dist/paged.polyfill.js');
+const pagedJsDest = path.join(vendorDir, 'paged.polyfill.js');
+if (fs.existsSync(pagedJsSource)) {
+  fs.copyFileSync(pagedJsSource, pagedJsDest);
+  console.log('  ✓ vendor/paged.polyfill.js');
+} else {
+  console.warn('  ⚠ paged.polyfill.js not found - run npm install in pagemd first');
+}
+
 // Build aliases for workspace packages
 const packagesDir = path.join(cliRoot, 'packages');
 const packages = fs.readdirSync(packagesDir).filter(p =>

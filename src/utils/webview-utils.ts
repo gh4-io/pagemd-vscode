@@ -37,6 +37,7 @@ export function getCspMetaTag(webview: vscode.Webview, nonce: string): string {
     script-src 'nonce-${nonce}' 'unsafe-eval';
     img-src ${cspSource} data: https:;
     font-src ${cspSource} data:;
+    connect-src ${cspSource};
     frame-src blob:;
   ">`;
 }

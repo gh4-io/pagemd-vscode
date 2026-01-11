@@ -1,0 +1,70 @@
+/* Preview layout styles - page emulation */
+/* Wrapped in @layer to ensure proper cascade priority */
+@layer pagemd-preview {
+
+/* Page container layout - flex column with vertical gaps */
+.pagedjs_pages {
+  background-color: var(--pagemd-bg-color, #777777);
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  /* 'safe center' centers when content fits, aligns to start when overflow
+     This allows full horizontal scrolling at high zoom levels */
+  align-items: safe center;
+}
+
+/* Individual page styling */
+.pagedjs_page {
+  color: var(--pagemd-font-color, #000);
+  background-color: var(--pagemd-paper-color, #ffffff);
+  margin: var(--pagemd-page-gap, 5mm) 0;
+}
+
+/* Page shadows (when highlightMargins enabled) */
+.highlight-margins .pagedjs_page {
+  box-shadow: 0 0.5mm 2mm #000;
+}
+
+/* Horizontal rule styling within pages */
+.pagedjs_page hr {
+  border-color: var(--pagemd-font-color, #000);
+}
+
+/* Margin box highlights (when highlightMargins enabled) */
+.highlight-margins [class*="pagedjs_margin-top"],
+.highlight-margins [class*="pagedjs_margin-left"],
+.highlight-margins [class*="pagedjs_margin-right"],
+.highlight-margins [class*="pagedjs_margin-bottom"] {
+  box-shadow: 0 0 0 1px inset var(--pagemd-margin-color, #0ff);
+}
+
+/* Two-column book spread layout (when twoColumnSpread enabled) - CSS Grid */
+.pagedjs_pages.two-column {
+  display: grid;
+  grid-template-columns: repeat(2, auto);
+  column-gap: var(--pagemd-spread-gap, 5mm);  /* horizontal gap between spreads */
+  row-gap: var(--pagemd-page-gap, 5mm);       /* vertical gap between rows */
+  /* 'safe center' centers when content fits, aligns to start when overflow
+     This allows full horizontal scrolling at high zoom levels */
+  justify-content: safe center;
+  padding: 20px;
+}
+
+/* Reset margins for grid layout - gaps handled by grid */
+.pagedjs_pages.two-column > .pagedjs_page,
+.pagedjs_pages.two-column > .pagemd-page-wrapper {
+  margin: 0;
+}
+
+/* First page on right - push to column 2 (when firstPagePosition='right') */
+.pagedjs_pages.two-column.first-page-right > .pagedjs_page:first-child,
+.pagedjs_pages.two-column.first-page-right > .pagemd-page-wrapper:first-child {
+  grid-column: 2;
+}
+
+/* Zoom control - applied to pages container */
+.pagedjs_pages {
+  zoom: var(--pagemd-zoom, 1);
+}
+
+} /* end @layer pagemd-preview */

@@ -1,14 +1,28 @@
 import * as vscode from 'vscode';
 import { PreviewPanel } from '../providers/preview-panel';
 import { ProfileState } from '../providers/profile-picker';
+import { logStructured } from '../extension';
+
+/**
+ * Options for opening the paged preview.
+ */
+export interface OpenPreviewOptions {
+  /** Open in split view (beside current editor) instead of same tab */
+  toSide?: boolean;
+}
 
 /**
  * Open paged preview for the active markdown file.
+ * @param context - Extension context
+ * @param outputChannel - Output channel for logging
+ * @param profileState - Profile state provider
+ * @param options - Preview options (toSide: open in split view)
  */
 export async function openPreview(
   context: vscode.ExtensionContext,
   outputChannel: vscode.OutputChannel,
-  profileState: ProfileState
+  profileState: ProfileState,
+  options: OpenPreviewOptions = {}
 ): Promise<void> {
   // Get active editor
   const editor = vscode.window.activeTextEditor;
@@ -24,22 +38,23 @@ export async function openPreview(
     return;
   }
 
-  // Save file if dirty
-  if (document.isDirty) {
-    const saved = await document.save();
-    if (!saved) {
-      vscode.window.showWarningMessage('PageMD: Failed to save file before preview');
-      return;
-    }
-  }
+  // No save required - preview panel handles unsaved/untitled docs via stdin
 
-  outputChannel.appendLine(`[PageMD] Opening preview: ${document.fileName}`);
+  const viewColumn = options.toSide
+    ? vscode.ViewColumn.Beside
+    : vscode.ViewColumn.Active;
+
+  logStructured('INFO', 'command', 'preview', 'start', 'Opening preview', {
+    file: document.fileName,
+    mode: options.toSide ? 'split' : 'same tab'
+  });
 
   // Create or show preview panel
   const panel = PreviewPanel.createOrShow(
     context.extensionUri,
     outputChannel,
-    profileState
+    profileState,
+    viewColumn
   );
 
   // Set up document watching

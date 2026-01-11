@@ -209,8 +209,7 @@ Or manually edit `settings.json` and remove all `pagemd.*` entries.
 
 | Setting | Default | Description |
 |---------|---------|-------------|
-| `pagemd.autoRefreshPreview` | `true` | Auto-refresh preview on file changes |
-| `pagemd.previewTrigger` | `onSave` | When to refresh: `onSave` or `onType` |
+| `pagemd.previewRefresh` | `manual` | When to refresh: `manual`, `onSave`, or `live` |
 
 ### Export Settings
 
@@ -218,7 +217,7 @@ Or manually edit `settings.json` and remove all `pagemd.*` entries.
 |---------|---------|-------------|
 | `pagemd.jpegQuality` | `90` | JPEG quality for image exports (1-100) |
 | `pagemd.pdfTimeout` | `60000` | PDF generation timeout in milliseconds |
-| `pagemd.headless` | `true` | Run browser in headless mode |
+| `pagemd.headless` | `true` | Run browser in headless mode (false = browser stays open for inspection) |
 | `pagemd.pagedJsMode` | `browser` | Paged.js execution mode: `browser` or `cli` |
 
 ## Usage
@@ -232,7 +231,7 @@ Or manually edit `settings.json` and remove all `pagemd.*` entries.
 
 1. Open a markdown file
 2. Use Command Palette → `PageMD: Open Paged Preview`
-3. Preview updates automatically based on `previewTrigger` setting
+3. Preview updates based on `previewRefresh` setting (manual, onSave, or live)
 
 #### Zoom Controls
 
@@ -339,8 +338,8 @@ pagemd --version  # Should output version
 ### Preview Doesn't Update
 
 **Check:**
-- `pagemd.autoRefreshPreview` is enabled (default: true)
-- File is saved (if `previewTrigger` is `onSave`)
+- `pagemd.previewRefresh` is set to `onSave` or `live` (default: `manual`)
+- File is saved (if `previewRefresh` is `onSave`)
 - No errors in Output panel (View → Output → PageMD)
 
 ### PDF Generation Times Out
@@ -357,7 +356,7 @@ pagemd --version  # Should output version
 "pagemd.headless": false
 ```
 
-This opens a visible browser window during export - useful for debugging layout issues.
+This opens a visible browser window during export. The PDF renders normally and the process completes, but the browser stays open for inspection. Close it manually when done.
 
 ### Output Panel Always Shows / Never Shows
 

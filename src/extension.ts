@@ -4,7 +4,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { execSync } from 'child_process';
 import { exportPdf } from './commands/export-pdf';
-import { exportAs as exportAsCmd } from './commands/export';
+import { exportAs as exportAsCmd, exportAll as exportAllCmd } from './commands/export';
 import { openPreview as openPreviewCmd } from './commands/preview';
 import {
   selectProfile as selectProfileCmd,
@@ -17,9 +17,11 @@ import {
 } from './commands/validate';
 import { createDocument as createDocumentCmd } from './commands/create-document';
 import { inspectDocument as inspectDocumentCmd } from './commands/inspect';
+import { initCommand as initCommandImpl } from './commands/init';
 import { ProfileState } from './providers/profile-picker';
 import { FormatState, showFormatPicker } from './providers/format-state';
 import { OutputPathState } from './providers/output-path-state';
+import { PreviewPanel } from './providers/preview-panel';
 
 /**
  * PageMD VS Code Extension
@@ -50,6 +52,9 @@ export function activate(context: vscode.ExtensionContext): void {
   // Check for Chrome installation (soft warning if not found)
   checkChromeInstallation();
 
+  // Check for deprecated settings and offer migration
+  checkDeprecatedSettings();
+
   // Initialize state providers
   profileState = new ProfileState(context);
   formatState = new FormatState(context);
@@ -73,8 +78,14 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('pagemd.exportPdf', () =>
       exportPdf(outputChannel, profileState)
     ),
+    vscode.commands.registerCommand('pagemd.exportAll', () =>
+      exportAllCmd(outputChannel, profileState, formatState, outputPathState)
+    ),
     vscode.commands.registerCommand('pagemd.openPreview', () =>
       openPreviewCmd(context, outputChannel, profileState)
+    ),
+    vscode.commands.registerCommand('pagemd.openPreviewToSide', () =>
+      openPreviewCmd(context, outputChannel, profileState, { toSide: true })
     ),
     vscode.commands.registerCommand('pagemd.selectProfile', () =>
       selectProfileCmd(profileState, statusBarItem, outputChannel, formatState)
@@ -87,6 +98,9 @@ export function activate(context: vscode.ExtensionContext): void {
     ),
     vscode.commands.registerCommand('pagemd.inspectDocument', () =>
       inspectDocumentCmd(outputChannel, profileState)
+    ),
+    vscode.commands.registerCommand('pagemd.init', (uri?: vscode.Uri) =>
+      initCommandImpl(outputChannel, uri)
     ),
     // New commands for session state management
     vscode.commands.registerCommand('pagemd.selectFormats', async () => {
@@ -120,11 +134,19 @@ export function activate(context: vscode.ExtensionContext): void {
       updateStatusBar(statusBarItem, profileState.getSelectedProfile(), formatState);
       vscode.window.showInformationMessage('PageMD: Session overrides cleared - using settings defaults');
     }),
+    vscode.commands.registerCommand('pagemd.refreshPreview', () => {
+      if (PreviewPanel.currentPanel) {
+        PreviewPanel.currentPanel.refresh();
+      }
+    }),
+    vscode.commands.registerCommand('pagemd.openDevTools', () => {
+      vscode.commands.executeCommand('workbench.action.webview.openDeveloperTools');
+    }),
   ];
 
   context.subscriptions.push(...commands);
 
-  log('Commands registered: exportAs, exportPdf, openPreview, selectProfile, validate, createDocument, inspectDocument, selectFormats, setOutputPath, resetSessionOverrides');
+  log('Commands registered: exportAs, exportPdf, exportAll, openPreview, openPreviewToSide, selectProfile, validate, createDocument, inspectDocument, init, selectFormats, setOutputPath, resetSessionOverrides, refreshPreview, openDevTools');
 }
 
 /**
@@ -138,10 +160,123 @@ export function deactivate(): void {
 // Utilities
 // =============================================================================
 
-function log(message: string): void {
-  const timestamp = new Date().toISOString();
-  outputChannel.appendLine(`[${timestamp}] ${message}`);
+/**
+ * Log level priority mapping.
+ * Lower numbers = more severe (always shown).
+ * Higher numbers = more verbose (filtered out unless level is increased).
+ */
+const LOG_LEVELS = {
+  OFF: 0,
+  FATAL: 1,
+  ERROR: 2,
+  WARN: 3,
+  INFO: 4,
+  DEBUG: 5,
+  TRACE: 6,
+} as const;
+
+type LogLevel = keyof typeof LOG_LEVELS;
+
+/**
+ * Get current extension log level from settings.
+ */
+function getExtensionLogLevel(): LogLevel {
+  const config = vscode.workspace.getConfiguration('pagemd');
+  return config.get<LogLevel>('extensionLogLevel', 'INFO');
 }
+
+/**
+ * Check if a log message should be shown based on current log level.
+ */
+function shouldLog(messageLevel: LogLevel): boolean {
+  const config = vscode.workspace.getConfiguration('pagemd');
+  const configuredLevel = config.get<string>('extensionLogLevel', 'INFO');
+
+  // Empty string disables all logging
+  if (!configuredLevel) {
+    return false;
+  }
+
+  // Show message if its priority is <= configured level priority
+  // (lower number = more severe = always shown)
+  const levelValue = LOG_LEVELS[configuredLevel as LogLevel];
+  if (levelValue === undefined) {
+    return true; // Unknown level, default to showing
+  }
+  return LOG_LEVELS[messageLevel] <= levelValue;
+}
+
+/**
+ * Format timestamp in bracket-compatible format.
+ * Returns: YYYY-MM-DD HH:mm:ss.SSS
+ */
+function formatTimestamp(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  const hour = String(now.getHours()).padStart(2, '0');
+  const minute = String(now.getMinutes()).padStart(2, '0');
+  const second = String(now.getSeconds()).padStart(2, '0');
+  const ms = String(now.getMilliseconds()).padStart(3, '0');
+  return `${year}-${month}-${day} ${hour}:${minute}:${second}.${ms}`;
+}
+
+/**
+ * Simple lifecycle logger for extension events.
+ * Format: YYYY-MM-DD HH:mm:ss.SSS [PageMD] message
+ *
+ * Always shown (bypasses log level filtering).
+ */
+function log(message: string): void {
+  const timestamp = formatTimestamp();
+  outputChannel.appendLine(`${timestamp} [PageMD-Ext] ${message}`);
+}
+
+/**
+ * Structured logger for detailed diagnostic messages.
+ * Format: YYYY-MM-DD HH:mm:ss.SSS [level] [PageMD] [module][section] result: message; data
+ *
+ * Respects pagemd.extensionLogLevel setting - only logs at or above configured level.
+ */
+function logStructured(
+  level: 'TRACE' | 'DEBUG' | 'INFO' | 'WARN' | 'ERROR' | 'FATAL',
+  module: string,
+  section: string,
+  result?: string,
+  message?: string,
+  data?: any
+): void {
+  // Check if this log level should be shown
+  if (!shouldLog(level)) {
+    return;
+  }
+
+  const timestamp = formatTimestamp();
+  const metadata = `${timestamp} [PageMD-Ext] [${level}] [${module}][${section}]`;
+
+  // Waterfall logic
+  const hasResult = result !== undefined && result !== null;
+  const hasMessage = message !== undefined && message !== null;
+  const hasData = data !== undefined && data !== null;
+
+  let payload = '';
+  if (hasData) {
+    const resultPart = hasResult ? result : '';
+    const messagePart = hasMessage ? String(message) : '';
+    payload = `${resultPart}: ${messagePart}; ${JSON.stringify(data)}`;
+  } else if (hasMessage) {
+    const resultPart = hasResult ? result : '';
+    payload = `${resultPart}: ${String(message)}`;
+  } else if (hasResult) {
+    payload = `${result}:`;
+  }
+
+  outputChannel.appendLine(payload ? `${metadata} ${payload}` : metadata);
+}
+
+// Export for use in other extension files
+export { outputChannel, log, logStructured };
 
 /**
  * Detect if Chrome/Chromium is installed on the system.
@@ -215,4 +350,68 @@ function checkChromeInstallation(): void {
   } else {
     log(`Chrome detected: ${chromePath}`);
   }
+}
+
+/**
+ * Check for deprecated settings and offer migration.
+ * - debugMode, logLevel → preview.debugLevel + cliLogLevel (v0.2.0)
+ * - autoRefreshPreview, previewTrigger → previewRefresh (v0.1.3)
+ */
+function checkDeprecatedSettings(): void {
+  const config = vscode.workspace.getConfiguration('pagemd');
+
+  // Helper to check if a setting is explicitly set (not just default)
+  const isExplicitlySet = <T>(inspect: vscode.WorkspaceConfiguration['inspect'] extends (key: string) => infer R ? R : never): boolean => {
+    const result = inspect as { globalValue?: T; workspaceValue?: T; workspaceFolderValue?: T } | undefined;
+    return result?.globalValue !== undefined
+      || result?.workspaceValue !== undefined
+      || result?.workspaceFolderValue !== undefined;
+  };
+
+  // Check deprecated settings
+  const hasDebugMode = isExplicitlySet(config.inspect<boolean>('debugMode'));
+  const hasLogLevel = isExplicitlySet(config.inspect<string>('logLevel'));
+  const hasAutoRefresh = isExplicitlySet(config.inspect<boolean>('autoRefreshPreview'));
+  const hasPreviewTrigger = isExplicitlySet(config.inspect<string>('previewTrigger'));
+
+  if (!hasDebugMode && !hasLogLevel && !hasAutoRefresh && !hasPreviewTrigger) {
+    return; // No deprecated settings found
+  }
+
+  const deprecated = [
+    hasDebugMode ? 'debugMode' : null,
+    hasLogLevel ? 'logLevel' : null,
+    hasAutoRefresh ? 'autoRefreshPreview' : null,
+    hasPreviewTrigger ? 'previewTrigger' : null,
+  ].filter(Boolean);
+
+  log('Deprecated settings detected: ' + deprecated.join(', '));
+
+  // Build migration message
+  const deprecatedList: string[] = [];
+  if (hasDebugMode) {
+    deprecatedList.push('debugMode → preview.debugLevel + cliLogLevel');
+  }
+  if (hasLogLevel) {
+    deprecatedList.push('logLevel → cliLogLevel');
+  }
+  if (hasAutoRefresh || hasPreviewTrigger) {
+    deprecatedList.push('autoRefreshPreview + previewTrigger → previewRefresh');
+  }
+
+  vscode.window.showWarningMessage(
+    `PageMD: Deprecated settings detected. Please migrate: ${deprecatedList.join(', ')}`,
+    'Open Settings',
+    'Learn More',
+    'Dismiss'
+  ).then(selection => {
+    if (selection === 'Open Settings') {
+      vscode.commands.executeCommand('workbench.action.openSettings', 'pagemd');
+    } else if (selection === 'Learn More') {
+      vscode.window.showInformationMessage(
+        'Migration: autoRefreshPreview + previewTrigger → previewRefresh ("manual", "onSave", or "live"). ' +
+        'debugMode=true → preview.debugLevel="basic". logLevel="X" → cliLogLevel="X". Remove old settings after migrating.'
+      );
+    }
+  });
 }

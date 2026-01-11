@@ -1,0 +1,124 @@
+/* Zoom toolbar styles - extracted from preview-panel.ts */
+/* Wrapped in @layer to ensure proper cascade priority */
+@layer pagemd-preview {
+
+.pagemd-zoom-toolbar {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  background: var(--vscode-editor-background, #1e1e1e);
+  border: 1px solid var(--vscode-panel-border, #3c3c3c);
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  z-index: 2147483647;
+  font-family: var(--vscode-font-family, system-ui);
+  font-size: 13px;
+  pointer-events: auto;
+}
+.pagemd-zoom-toolbar button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 4px;
+  background: var(--vscode-button-secondaryBackground, #3c3c3c);
+  color: var(--vscode-button-secondaryForeground, #fff);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: bold;
+}
+.pagemd-zoom-toolbar button:hover {
+  background: var(--vscode-button-secondaryHoverBackground, #505050);
+}
+.pagemd-zoom-toolbar button:active {
+  background: var(--vscode-button-background, #0e639c);
+}
+.pagemd-zoom-toolbar .zoom-level {
+  box-sizing: border-box;
+  width: 48px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  color: var(--vscode-foreground, #ccc);
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
+  padding: 0;
+  margin: 0;
+  border-radius: 3px;
+  transition: background-color 0.15s;
+}
+.pagemd-zoom-toolbar .zoom-level:hover {
+  background-color: rgba(128, 128, 128, 0.25);
+}
+.pagemd-zoom-toolbar .zoom-input {
+  box-sizing: border-box;
+  width: 48px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 3px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+  box-shadow: inset 0 0 0 1px var(--vscode-focusBorder, #007fd4);
+}
+.pagemd-zoom-toolbar .zoom-input::-webkit-outer-spin-button,
+.pagemd-zoom-toolbar .zoom-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pagemd-zoom-toolbar .zoom-input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007fd4);
+}
+.pagemd-zoom-toolbar .zoom-separator {
+  width: 1px;
+  height: 20px;
+  background: var(--vscode-panel-border, #3c3c3c);
+  margin: 0 4px;
+}
+.pagemd-zoom-toolbar button.fit-btn {
+  width: auto;
+  padding: 0 10px;
+  font-size: 11px;
+  font-weight: normal;
+}
+.pagemd-zoom-toolbar button.mode-btn {
+  font-size: 16px;
+}
+.pagemd-zoom-toolbar button.mode-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pagemd-zoom-toolbar button.mode-btn.active {
+  background: var(--vscode-button-background, #0e639c);
+  color: var(--vscode-button-foreground, #fff);
+}
+/* Hand tool cursor states */
+body.hand-mode {
+  cursor: grab;
+  cursor: -webkit-grab;
+  cursor: -moz-grab;
+}
+body.hand-mode.dragging {
+  cursor: grabbing;
+  cursor: -webkit-grabbing;
+  cursor: -moz-grabbing;
+  user-select: none;
+}
+
+} /* end @layer pagemd-preview */

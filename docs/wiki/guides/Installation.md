@@ -52,6 +52,80 @@ Then press `F5` in VS Code to launch Extension Development Host.
 
 **Note:** This builds the extension without bundled CLI. For distribution builds with bundled CLI, see [[Developer-Guide#cli-bundling]].
 
+### Production Build (Setup Script)
+
+For a complete production build with bundled CLI, use the setup script:
+
+#### Prerequisites
+
+- Windows with PowerShell
+- Node.js 20 or later installed
+- Git installed
+
+#### Steps
+
+1. **Create an empty folder** for the build
+   - Example: `C:\pagemd-build\`
+   - The script will clone repositories into this folder
+
+2. **Download the setup script**
+   - Get `setup-pagemd-prod.ps1` from the repository
+   - Save it to your empty build folder
+
+3. **Open PowerShell**
+   - Press the Windows key
+   - Type `powershell`
+   - Click on Windows PowerShell
+
+4. **Navigate to your build folder**
+   ```powershell
+   cd C:\pagemd-build
+   ```
+
+5. **Run the setup script**
+   ```powershell
+   .\setup-pagemd-prod.ps1
+   ```
+
+6. **Select option 4** (Bundled Extension - Recommended)
+   - This creates a self-contained extension with CLI included
+
+7. **Follow the prompts**
+   - Press Enter to accept defaults
+   - The script will clone, build, and package everything
+
+#### What the Script Does
+
+1. Clones both `pagemd` and `pagemd-vscode` repositories
+2. Installs all dependencies
+3. Bundles the CLI into the extension
+4. Compiles the TypeScript code
+5. Creates a `.vsix` file for installation
+6. Optionally installs to VS Code
+
+#### Verification
+
+After the script completes:
+
+1. Check that the build succeeded:
+   ```powershell
+   ls pagemd-vscode\out\
+   ```
+   You should see `extension.js` listed.
+
+2. Check that the VSIX was created:
+   ```powershell
+   ls pagemd-vscode\*.vsix
+   ```
+
+#### Troubleshooting
+
+If the build fails:
+- Read the error messages shown in the script output
+- Check that Node.js 20+ is installed: `node --version`
+- Check that Git is installed: `git --version`
+- Ensure you have internet access for cloning and npm install
+
 ---
 
 ## CLI Resolution
