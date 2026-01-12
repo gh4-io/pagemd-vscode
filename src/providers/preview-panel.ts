@@ -91,6 +91,27 @@ export class PreviewPanel {
       return PreviewPanel.currentPanel;
     }
 
+    // Build localResourceRoots: extension + workspace folders + common roots
+    // This allows webview to access images from document directories
+    const resourceRoots: vscode.Uri[] = [extensionUri];
+
+    // Add all workspace folders
+    if (vscode.workspace.workspaceFolders) {
+      resourceRoots.push(...vscode.workspace.workspaceFolders.map(f => f.uri));
+    }
+
+    // Add common filesystem roots for documents outside workspace
+    // Windows: Add all drive letters that might be in use
+    // Unix: Add root and home directory
+    if (process.platform === 'win32') {
+      // Add common Windows drive roots
+      for (const drive of ['C', 'D', 'E']) {
+        resourceRoots.push(vscode.Uri.file(`${drive}:\\`));
+      }
+    } else {
+      resourceRoots.push(vscode.Uri.file('/'));
+    }
+
     // Create new panel
     const panel = vscode.window.createWebviewPanel(
       PreviewPanel.viewType,
@@ -99,7 +120,7 @@ export class PreviewPanel {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [extensionUri],
+        localResourceRoots: resourceRoots,
       }
     );
 
@@ -529,14 +550,59 @@ export class PreviewPanel {
   }
 
   /**
+   * Rewrite relative image paths to webview URIs.
+   * Converts src="assets/img/foo.png" to src="vscode-webview://..."
+   */
+  private rewriteImagePaths(html: string): string {
+    if (!this.documentUri) {
+      return html;
+    }
+
+    const baseDir = path.dirname(this.documentUri.fsPath);
+    const webview = this.panel.webview;
+
+    // Rewrite src attributes for images and other media
+    return html.replace(/(\ssrc=["'])([^"']+)(["'])/gi, (match, prefix, src, suffix) => {
+      // Skip absolute URLs, data URIs, protocol-relative URLs
+      if (/^(https?:|data:|file:|blob:|\/\/|vscode-)/i.test(src)) {
+        return match;
+      }
+
+      // Skip fragment-only URLs
+      if (src.startsWith('#')) {
+        return match;
+      }
+
+      try {
+        // Resolve relative path to absolute
+        const absolutePath = path.resolve(baseDir, src);
+        const fileUri = vscode.Uri.file(absolutePath);
+        const webviewUri = webview.asWebviewUri(fileUri);
+
+        logStructured('TRACE', 'preview', 'image-rewrite', 'success',
+          `Rewrote image path: ${src} → ${webviewUri.toString()}`);
+
+        return `${prefix}${webviewUri.toString()}${suffix}`;
+      } catch (err) {
+        logStructured('WARN', 'preview', 'image-rewrite', 'fail',
+          `Failed to rewrite image path: ${src}`, { error: String(err) });
+        return match;
+      }
+    });
+  }
+
+  /**
    * Render HTML content in webview.
    */
   private renderHtml(html: string): void {
     const nonce = getNonce();
     const themeClass = getThemeClass();
 
+    // Rewrite relative image paths to webview URIs
+    const htmlWithImages = this.rewriteImagePaths(html);
+
     // Inject CSP and theme
-    const webviewHtml = this.wrapHtml(html, nonce, themeClass);
+    const webviewHtml = this.wrapHtml(htmlWithImages, nonce, themeClass);
     this.panel.webview.html = webviewHtml;
   }
 
