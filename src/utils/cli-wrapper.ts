@@ -216,7 +216,9 @@ export function runPageMD(config: CliConfig): Promise<CliResult> {
 
     const options: SpawnOptions = {
       cwd,
-      shell: true,
+      // Don't use shell - it causes argument splitting on spaces (breaks paths like "C:\Program Files\...")
+      // Node's spawn handles .cmd files (like npx.cmd) automatically on Windows
+      shell: false,
       detached: os.platform() !== 'win32',
       stdio: ['pipe', 'pipe', 'pipe'],
       env: mergedEnv,
