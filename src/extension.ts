@@ -5,6 +5,7 @@ import * as path from 'path';
 import { execSync } from 'child_process';
 import { exportPdf } from './commands/export-pdf';
 import { exportAs as exportAsCmd, exportAll as exportAllCmd } from './commands/export';
+import { bundleExport as bundleExportCmd } from './commands/bundle-export';
 import { openPreview as openPreviewCmd } from './commands/preview';
 import {
   selectProfile as selectProfileCmd,
@@ -81,6 +82,9 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand('pagemd.exportAll', () =>
       exportAllCmd(outputChannel, profileState, formatState, outputPathState)
     ),
+    vscode.commands.registerCommand('pagemd.bundleExport', (uri?: vscode.Uri) =>
+      bundleExportCmd(outputChannel, profileState, uri)
+    ),
     vscode.commands.registerCommand('pagemd.openPreview', () =>
       openPreviewCmd(context, outputChannel, profileState)
     ),
@@ -146,7 +150,7 @@ export function activate(context: vscode.ExtensionContext): void {
 
   context.subscriptions.push(...commands);
 
-  log('Commands registered: exportAs, exportPdf, exportAll, openPreview, openPreviewToSide, selectProfile, validate, createDocument, inspectDocument, init, selectFormats, setOutputPath, resetSessionOverrides, refreshPreview, openDevTools');
+  log('Commands registered: exportAs, exportPdf, exportAll, bundleExport, openPreview, openPreviewToSide, selectProfile, validate, createDocument, inspectDocument, init, selectFormats, setOutputPath, resetSessionOverrides, refreshPreview, openDevTools');
 }
 
 /**

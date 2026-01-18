@@ -103,6 +103,11 @@
         "command": "pagemd.openDevTools",
         "title": "Open DevTools",
         "icon": "$(debug)"
+      },
+      {
+        "command": "pagemd.bundleExport",
+        "title": "PageMD: Bundle Export to Static Site",
+        "icon": "$(package)"
       }
     ],
     "configuration": [
@@ -364,6 +369,11 @@
         {
           "when": "resourceLangId == markdown",
           "command": "pagemd.exportAs",
+          "group": "navigation"
+        },
+        {
+          "when": "resourceLangId == markdown",
+          "command": "pagemd.bundleExport",
           "group": "navigation"
         },
         {
