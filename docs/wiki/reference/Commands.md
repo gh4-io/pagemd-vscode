@@ -22,6 +22,7 @@ Complete reference for all PageMD VS Code extension commands.
 |---------|-------|-------------|
 | `pagemd.exportPdf` | Export to PDF | Quick PDF export |
 | `pagemd.exportAs` | Export Document... | Export with format selection |
+| `pagemd.bundleExport` | Bundle Export to Static Site | Export to static site bundle |
 | `pagemd.openPreview` | Open Paged Preview | Open preview panel |
 | `pagemd.refreshPreview` | Refresh Preview | Manual refresh of preview panel |
 | `pagemd.selectProfile` | Select Profile | Switch rendering profile |
@@ -85,6 +86,52 @@ Export with format selection dialog.
 | HTML | `.html` | Rendered HTML with styles |
 | PNG | `.png` | First page screenshot |
 | JPEG | `.jpg` | First page screenshot |
+
+---
+
+### PageMD: Bundle Export to Static Site
+
+**Command ID:** `pagemd.bundleExport`
+**Keyboard:** None (assign in Keyboard Shortcuts)
+
+Export markdown to a bundled static site suitable for web hosting. Creates standalone HTML files with shared CSS and assets.
+
+**Usage:**
+
+1. Open a Markdown file (or right-click in Explorer)
+2. `Ctrl+Shift+P` → "PageMD: Bundle Export to Static Site"
+3. Select output directory
+4. Bundle is created with external CSS and assets
+
+**Output structure:**
+
+```
+<output-dir>/
+├── <slug>.html          # HTML with <link> to styles.css
+├── styles.css           # Shared CSS (all layers combined)
+└── assets/              # Copied images, fonts, etc.
+```
+
+**Features:**
+
+- **External CSS** - All CSS layers combined into single `styles.css`
+- **Asset bundling** - Images and fonts copied to `assets/` folder
+- **Wikilink conversion** - `[[Page Name]]` → `page-name.html`
+- **Slug generation** - Filenames converted to URL-safe slugs
+
+**CLI equivalent:**
+
+```bash
+pagemd build document.md -o html --bundle -d ./dist
+```
+
+**Use cases:**
+
+- Deploying to static web hosts (Netlify, GitHub Pages, Caddy)
+- Creating shareable HTML documentation
+- Multi-page site generation with working internal links
+
+**Note:** This command calls the CLI `--bundle` flag, which was added in the CLI bundle export feature.
 
 ---
 
@@ -411,6 +458,7 @@ Right-click anywhere inside the preview content:
 Right-click a Markdown file in Explorer:
 
 - **Export Document...** → Export with format selection
+- **Bundle Export to Static Site** → Export to static site bundle
 
 Right-click a folder in Explorer:
 
