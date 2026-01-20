@@ -592,6 +592,93 @@ export class PreviewPanel {
   }
 
   /**
+   * Convert images to base64 data URIs for browser view iframe.
+   * The iframe uses a blob URL which can't load vscode-webview: URLs,
+   * so we embed images directly as data URIs.
+   */
+  private rewriteImagesToDataUris(html: string): string {
+    if (!this.documentUri) {
+      return html;
+    }
+
+    const baseDir = path.dirname(this.documentUri.fsPath);
+
+    // Rewrite src attributes to data URIs
+    return html.replace(/(\ssrc=["'])([^"']+)(["'])/gi, (match, prefix, src, suffix) => {
+      // Skip data URIs (already embedded)
+      if (/^data:/i.test(src)) {
+        return match;
+      }
+
+      // Skip fragment-only URLs
+      if (src.startsWith('#')) {
+        return match;
+      }
+
+      try {
+        let absolutePath: string;
+
+        // Handle vscode-webview: URLs - extract the file path
+        if (/^vscode-webview:/i.test(src)) {
+          // vscode-webview URLs encode the path - extract it
+          // Format: vscode-webview://webview-id/path/to/file
+          const urlMatch = src.match(/vscode-webview:\/\/[^\/]+\/(.+)/i);
+          if (!urlMatch) {
+            return match;
+          }
+          absolutePath = decodeURIComponent(urlMatch[1]);
+          // On Windows, the path might have a leading slash we need to remove
+          if (process.platform === 'win32' && absolutePath.startsWith('/')) {
+            absolutePath = absolutePath.substring(1);
+          }
+        } else if (/^(https?:|file:|blob:|\/\/)/i.test(src)) {
+          // Skip external URLs
+          return match;
+        } else {
+          // Relative path - resolve from document directory
+          absolutePath = path.resolve(baseDir, src);
+        }
+
+        // Read file and convert to base64
+        const fs = require('fs');
+        if (!fs.existsSync(absolutePath)) {
+          logStructured('WARN', 'preview', 'data-uri', 'fail',
+            `Image file not found: ${absolutePath}`);
+          return match;
+        }
+
+        const buffer = fs.readFileSync(absolutePath);
+        const base64 = buffer.toString('base64');
+
+        // Determine MIME type from extension
+        const ext = path.extname(absolutePath).toLowerCase();
+        const mimeTypes: { [key: string]: string } = {
+          '.png': 'image/png',
+          '.jpg': 'image/jpeg',
+          '.jpeg': 'image/jpeg',
+          '.gif': 'image/gif',
+          '.svg': 'image/svg+xml',
+          '.webp': 'image/webp',
+          '.ico': 'image/x-icon',
+          '.bmp': 'image/bmp'
+        };
+        const mimeType = mimeTypes[ext] || 'application/octet-stream';
+
+        const dataUri = `data:${mimeType};base64,${base64}`;
+
+        logStructured('TRACE', 'preview', 'data-uri', 'success',
+          `Converted image to data URI: ${src}`);
+
+        return `${prefix}${dataUri}${suffix}`;
+      } catch (err) {
+        logStructured('WARN', 'preview', 'data-uri', 'fail',
+          `Failed to convert image to data URI: ${src}`, { error: String(err) });
+        return match;
+      }
+    });
+  }
+
+  /**
    * Render HTML content in webview.
    */
   private renderHtml(html: string): void {
@@ -751,10 +838,11 @@ export class PreviewPanel {
     // Pass debug level state
     window.pagemdDebugLevel = '${config.get<string>('preview.debugLevel', '')}';
     // Store raw HTML for browser mode toggle (before Paged.js transforms it)
+    // Convert images to data URIs since blob iframe can't load vscode-webview: URLs
     // Use data-color-scheme for document theming (same as paged preview)
-    window.pagemdRawHtml = ${JSON.stringify(`<!DOCTYPE html>
+    window.pagemdRawHtml = ${JSON.stringify(this.rewriteImagesToDataUris(`<!DOCTYPE html>
 <html data-color-scheme="${colorScheme}"><head><meta charset="UTF-8"><style>${styles}</style></head>
-<body>${bodyContent}</body></html>`)};
+<body>${bodyContent}</body></html>`))};
   </script>
   <script nonce="${nonce}" src="${previewerUri}"></script>
   <script nonce="${nonce}" src="${pagedJsUri}"></script>
