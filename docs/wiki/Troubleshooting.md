@@ -27,6 +27,8 @@ Common issues and solutions for the PageMD VS Code extension.
   - [Paged.js Toggle Button Not Visible](#pagedjs-toggle-button-not-visible)
   - [External Scripts Not Running in Browser View](#external-scripts-not-running-in-browser-view)
   - [Browser View Styles Missing](#browser-view-styles-missing)
+  - [Images Not Loading in Browser View](#images-not-loading-in-browser-view)
+  - [Right-Click Context Menu Limited in Browser View](#right-click-context-menu-limited-in-browser-view)
   - [Custom CSS position:fixed Not Working](#custom-css-positionfixed-not-working)
 - [Export Problems](#export-problems)
   - [Non-Headless Mode for Debugging](#non-headless-mode-for-debugging)
@@ -521,6 +523,52 @@ CSP restricts external stylesheets from loading
    If styles must be separate, they need to be loaded via blob or data URIs, not external URLs
 
 **Technical Note:** The browser view uses a strict CSP that blocks external resources to prevent security issues. All styling must be inline or from same-origin sources.
+
+---
+
+### Images Not Loading in Browser View
+
+**Symptom:** Images display correctly in paged view but appear broken/missing in browser view
+
+**Cause:**
+
+CSP (Content Security Policy) issue - the browser view's CSP didn't allow `vscode-webview:` protocol URIs for images.
+
+**Technical Details:**
+
+- Image paths are rewritten to `vscode-webview://...` URIs for VS Code webview compatibility
+- The browser view iframe CSP must explicitly allow this protocol
+- Fixed in 2026-01-20 by adding `vscode-webview:` to the CSP's `img-src`, `font-src`, and `default-src` directives
+
+**If images still don't load:**
+
+1. **Update to latest extension version**
+2. **Check image path:** Relative paths should work (e.g., `![](./images/logo.png)`)
+3. **Verify image file exists:** Broken image icon may indicate wrong path
+4. **Check DevTools console:** Right-click preview → "Inspect Element" → Console for CSP errors
+
+---
+
+### Right-Click Context Menu Limited in Browser View
+
+**Symptom:** Right-click shows limited or no context menu options in browser view
+
+**Cause:**
+
+The browser view uses an iframe with a blob URL for security isolation. This iframe creates a separate document context that is isolated from VS Code's webview API.
+
+**This is a known limitation.** The iframe approach is necessary to:
+- Preserve the white page appearance with proper margins
+- Maintain CSS layer isolation between paged and browser modes
+- Provide security through CSP restrictions
+
+**Workarounds:**
+
+1. **Use paged view for full context menus** - Switch back to paged view (click the view toggle button) for full right-click functionality
+2. **Use keyboard shortcuts** - Copy/paste via Ctrl+C/Ctrl+V often works even when context menus don't
+3. **Open in external browser** - Export to HTML and open in a regular browser for full interactivity
+
+**Technical Note:** Replacing the iframe with direct DOM injection would fix context menus but would lose the white page styling and margin visualization that makes browser view useful for document preview.
 
 ---
 

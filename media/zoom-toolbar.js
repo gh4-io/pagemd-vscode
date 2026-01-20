@@ -406,7 +406,8 @@
     }
 
     // Wrap HTML with CSP meta tag for security
-    const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'self\' blob: data:; script-src \'none\'; style-src \'unsafe-inline\' blob: data:; img-src \'self\' blob: data: https:; font-src \'self\' blob: data:;">';
+    // IMPORTANT: Include vscode-webview: for images rewritten by preview-panel.ts
+    const cspMeta = '<meta http-equiv="Content-Security-Policy" content="default-src \'self\' blob: data: vscode-webview:; script-src \'none\'; style-src \'unsafe-inline\' blob: data:; img-src \'self\' blob: data: https: vscode-webview:; font-src \'self\' blob: data: vscode-webview:;">';
 
     // Inject CSP into the HTML head
     const wrappedHtml = rawHtml.replace(
