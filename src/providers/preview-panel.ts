@@ -685,18 +685,30 @@ export class PreviewPanel {
     const nonce = getNonce();
     const themeClass = getThemeClass();
 
-    // Rewrite relative image paths to webview URIs
+    // Extract original body content BEFORE image path rewriting
+    // This is used for the browser view which needs data URIs, not vscode-webview: URLs
+    let originalBodyContent = html;
+    const originalBodyMatch = html.match(/<body[^>]*>([\s\S]*)<\/body>/i);
+    if (originalBodyMatch) {
+      originalBodyContent = originalBodyMatch[1];
+    }
+
+    // Rewrite relative image paths to webview URIs for Paged.js view
     const htmlWithImages = this.rewriteImagePaths(html);
 
-    // Inject CSP and theme
-    const webviewHtml = this.wrapHtml(htmlWithImages, nonce, themeClass);
+    // Inject CSP and theme, passing original body for browser view
+    const webviewHtml = this.wrapHtml(htmlWithImages, nonce, themeClass, originalBodyContent);
     this.panel.webview.html = webviewHtml;
   }
 
   /**
    * Wrap HTML with webview shell and inject Paged.js runtime.
+   * @param content - HTML content with vscode-webview: image URLs (for Paged.js view)
+   * @param nonce - Security nonce for scripts
+   * @param themeClass - VS Code theme class
+   * @param originalBodyContent - Original body content with relative paths (for browser view)
    */
-  private wrapHtml(content: string, nonce: string, themeClass: string): string {
+  private wrapHtml(content: string, nonce: string, themeClass: string, originalBodyContent?: string): string {
     const csp = getCspMetaTag(this.panel.webview, nonce);
     const pagedJsUri = this.getPagedJsUri();
     const previewerUri = this.getPreviewerUri();
@@ -838,11 +850,13 @@ export class PreviewPanel {
     // Pass debug level state
     window.pagemdDebugLevel = '${config.get<string>('preview.debugLevel', '')}';
     // Store raw HTML for browser mode toggle (before Paged.js transforms it)
-    // Convert images to data URIs since blob iframe can't load vscode-webview: URLs
+    // Use originalBodyContent (with relative paths) if available, as it allows
+    // rewriteImagesToDataUris to properly resolve paths from the document directory.
+    // The vscode-webview: URLs in bodyContent can't be loaded by the blob iframe.
     // Use data-color-scheme for document theming (same as paged preview)
     window.pagemdRawHtml = ${JSON.stringify(this.rewriteImagesToDataUris(`<!DOCTYPE html>
 <html data-color-scheme="${colorScheme}"><head><meta charset="UTF-8"><style>${styles}</style></head>
-<body>${bodyContent}</body></html>`))};
+<body>${originalBodyContent || bodyContent}</body></html>`))};
   </script>
   <script nonce="${nonce}" src="${previewerUri}"></script>
   <script nonce="${nonce}" src="${pagedJsUri}"></script>
