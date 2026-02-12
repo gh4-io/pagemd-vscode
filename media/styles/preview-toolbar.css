@@ -108,6 +108,52 @@
   background: var(--vscode-button-background, #0e639c);
   color: var(--vscode-button-foreground, #fff);
 }
+/* Page navigation controls */
+.pagemd-zoom-toolbar .page-nav-btn {
+  font-size: 10px;
+  width: 24px;
+  height: 28px;
+}
+.pagemd-zoom-toolbar .page-nav-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pagemd-zoom-toolbar .page-input {
+  box-sizing: border-box;
+  width: 36px;
+  height: 28px;
+  padding: 0;
+  margin: 0;
+  border: none;
+  border-radius: 3px;
+  background: var(--vscode-input-background, #3c3c3c);
+  color: var(--vscode-input-foreground, #ccc);
+  font-family: inherit;
+  font-size: 13px;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  -moz-appearance: textfield;
+}
+.pagemd-zoom-toolbar .page-input::-webkit-outer-spin-button,
+.pagemd-zoom-toolbar .page-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+.pagemd-zoom-toolbar .page-input:focus {
+  outline: none;
+  box-shadow: inset 0 0 0 2px var(--vscode-focusBorder, #007fd4);
+}
+.pagemd-zoom-toolbar .page-input[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.pagemd-zoom-toolbar .page-total {
+  color: var(--vscode-descriptionForeground, #999);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  user-select: none;
+}
 /* Hand tool cursor states */
 body.hand-mode {
   cursor: grab;

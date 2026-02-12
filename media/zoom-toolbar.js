@@ -446,6 +446,8 @@
         }
       }
     });
+    // Page controls follow paged mode state
+    setPageControlsEnabled(enabled);
   }
 
   function toggleViewMode() {
@@ -475,8 +477,9 @@
           }
         }
 
-        // Disable zoom and book controls
+        // Disable zoom and book controls + page navigation
         setControlsEnabled(false);
+        destroyPageObserver();
       } else {
         // Switch back to paged mode
         state.viewMode = 'paged';
@@ -513,6 +516,9 @@
 
         // Restore scroll boundary layout (inline-flex + spacers)
         adjustScrollBoundary();
+
+        // Re-initialize page observer for paged mode
+        initPageObserver();
       }
       saveState();
     } catch (err) {
@@ -569,6 +575,11 @@
   let startY = 0;
   let scrollLeft = 0;
   let scrollTop = 0;
+
+  // Page navigation state (transient - not persisted across refreshes)
+  let currentPage = 1;
+  let totalPages = 0;
+  let pageObserver = null;
 
   function toggleHandTool() {
     const handBtn = document.getElementById('hand-tool-btn');
@@ -638,6 +649,153 @@
   }
 
   // ============================================================================
+  // Page Navigation
+  // ============================================================================
+
+  /**
+   * Update page counter display and button states.
+   * @param {number} current - Current page number (1-based)
+   * @param {number} total - Total number of pages
+   */
+  function updatePageCounter(current, total) {
+    currentPage = current;
+    totalPages = total;
+
+    var input = document.getElementById('page-input');
+    var totalEl = document.getElementById('page-total');
+    var prevBtn = document.getElementById('prev-page-btn');
+    var nextBtn = document.getElementById('next-page-btn');
+
+    if (input) input.value = current;
+    if (totalEl) totalEl.textContent = '/ ' + total;
+
+    // Disable prev/next at boundaries
+    if (prevBtn) {
+      if (current <= 1 || total === 0) {
+        prevBtn.setAttribute('disabled', 'true');
+      } else {
+        prevBtn.removeAttribute('disabled');
+      }
+    }
+    if (nextBtn) {
+      if (current >= total || total === 0) {
+        nextBtn.setAttribute('disabled', 'true');
+      } else {
+        nextBtn.removeAttribute('disabled');
+      }
+    }
+  }
+
+  /**
+   * Scroll to a specific page number.
+   * @param {number} pageNum - Page number to scroll to (1-based)
+   */
+  function scrollToPage(pageNum) {
+    if (totalPages === 0) return;
+    pageNum = clamp(pageNum, 1, totalPages);
+
+    var page = document.querySelector('.pagedjs_page[data-page-number="' + pageNum + '"]');
+    if (page) {
+      page.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }
+
+  /**
+   * Handle page input submission (Enter key or blur).
+   */
+  function handlePageInput() {
+    var input = document.getElementById('page-input');
+    if (!input) return;
+
+    var num = parseInt(input.value, 10);
+    if (isNaN(num) || totalPages === 0) {
+      // Reset to current page on invalid input
+      input.value = currentPage;
+      return;
+    }
+
+    num = clamp(num, 1, totalPages);
+    scrollToPage(num);
+    updatePageCounter(num, totalPages);
+  }
+
+  /**
+   * Enable or disable page navigation controls.
+   * @param {boolean} enabled - Whether controls should be enabled
+   */
+  function setPageControlsEnabled(enabled) {
+    var ids = ['prev-page-btn', 'next-page-btn', 'page-input'];
+    ids.forEach(function(id) {
+      var el = document.getElementById(id);
+      if (el) {
+        if (enabled) {
+          el.removeAttribute('disabled');
+        } else {
+          el.setAttribute('disabled', 'true');
+        }
+      }
+    });
+  }
+
+  /**
+   * Destroy existing page observer if active.
+   */
+  function destroyPageObserver() {
+    if (pageObserver) {
+      pageObserver.disconnect();
+      pageObserver = null;
+    }
+  }
+
+  /**
+   * Initialize IntersectionObserver to track which page is currently visible.
+   * Observes all .pagedjs_page elements and updates the counter when pages
+   * cross the 50% visibility threshold.
+   */
+  function initPageObserver() {
+    destroyPageObserver();
+
+    var pages = document.querySelectorAll('.pagedjs_page');
+    totalPages = pages.length;
+
+    if (totalPages === 0) {
+      updatePageCounter(0, 0);
+      return;
+    }
+
+    // Track the topmost visible page
+    var visiblePages = new Map();
+
+    pageObserver = new IntersectionObserver(function(entries) {
+      entries.forEach(function(entry) {
+        var pageNum = parseInt(entry.target.getAttribute('data-page-number'), 10);
+        if (isNaN(pageNum)) return;
+
+        if (entry.isIntersecting) {
+          visiblePages.set(pageNum, entry.intersectionRatio);
+        } else {
+          visiblePages.delete(pageNum);
+        }
+      });
+
+      // Pick the lowest page number among visible pages (topmost in document)
+      if (visiblePages.size > 0) {
+        var lowestPage = Math.min.apply(null, Array.from(visiblePages.keys()));
+        updatePageCounter(lowestPage, totalPages);
+      }
+    }, {
+      threshold: [0, 0.25, 0.5, 0.75, 1.0]
+    });
+
+    pages.forEach(function(page) {
+      pageObserver.observe(page);
+    });
+
+    // Set initial state
+    updatePageCounter(1, totalPages);
+  }
+
+  // ============================================================================
   // Keyboard Shortcuts
   // ============================================================================
 
@@ -648,6 +806,21 @@
       if (!e.target.matches('input, textarea')) {
         e.preventDefault();
         toggleHandTool();
+      }
+    }
+
+    // Page navigation shortcuts (only in paged mode)
+    if (state.viewMode === 'paged' && totalPages > 0) {
+      if (e.key === 'PageUp') {
+        e.preventDefault();
+        if (currentPage > 1) {
+          scrollToPage(currentPage - 1);
+        }
+      } else if (e.key === 'PageDown') {
+        e.preventDefault();
+        if (currentPage < totalPages) {
+          scrollToPage(currentPage + 1);
+        }
       }
     }
 
@@ -765,6 +938,25 @@
     document.getElementById('book-toggle-btn')?.addEventListener('click', toggleBookMode);
     document.getElementById('hand-tool-btn')?.addEventListener('click', toggleHandTool);
 
+    // Page navigation controls
+    document.getElementById('prev-page-btn')?.addEventListener('click', function() {
+      if (currentPage > 1) scrollToPage(currentPage - 1);
+    });
+    document.getElementById('next-page-btn')?.addEventListener('click', function() {
+      if (currentPage < totalPages) scrollToPage(currentPage + 1);
+    });
+    var pageInput = document.getElementById('page-input');
+    if (pageInput) {
+      pageInput.addEventListener('keydown', function(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          handlePageInput();
+          pageInput.blur();
+        }
+      });
+      pageInput.addEventListener('blur', handlePageInput);
+    }
+
     // Hand tool mouse events
     document.addEventListener('mousedown', handleMouseDown);
     document.addEventListener('mousemove', handleMouseMove);
@@ -810,6 +1002,7 @@
           initToolbar();
           restoreUIState();
           adjustScrollBoundary();
+          initPageObserver();
         }, 50);
       });
 
@@ -819,6 +1012,7 @@
           initToolbar();
           restoreUIState();
           adjustScrollBoundary();
+          initPageObserver();
         }, 100);
       });
 
@@ -828,6 +1022,7 @@
           initToolbar();
           restoreUIState();
           adjustScrollBoundary();
+          initPageObserver();
         }, 50);
       }
     } catch (err) {
@@ -866,7 +1061,13 @@
       toggleBookMode: toggleBookMode,
       toggleViewMode: toggleViewMode,
       toggleHandTool: toggleHandTool,
-      adjustScrollBoundary: adjustScrollBoundary
+      adjustScrollBoundary: adjustScrollBoundary,
+      // Page navigation for testing
+      scrollToPage: scrollToPage,
+      initPageObserver: initPageObserver,
+      destroyPageObserver: destroyPageObserver,
+      getCurrentPage: function() { return currentPage; },
+      getTotalPages: function() { return totalPages; }
     };
   }
 })();

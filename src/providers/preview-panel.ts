@@ -1,10 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { getNonce, getCspMetaTag, getThemeClass, getWebviewUri } from '../utils/webview-utils';
-import { runPageMD, buildCliEnv } from '../utils/cli-wrapper';
+import { runPageMD, buildCliEnv, getCliTimeout } from '../utils/cli-wrapper';
 import { extractCleanMessage } from '../utils/cli-message-extractor';
 import { ProfileState } from './profile-picker';
 import { log, logStructured } from '../extension';
+import { clearLogFile } from '../utils/file-logger';
 
 /**
  * Manages the paged preview webview panel.
@@ -229,14 +230,15 @@ export class PreviewPanel {
     }
 
     this.isRefreshing = true;
+    clearLogFile(); // Clear log at start of new refresh operation
 
     try {
       const filePath = this.documentUri.fsPath;
       const profile = this.profileState.getSelectedProfile();
 
-      // Read configurable timeout (M3)
+      // Get CLI timeout from settings (default 5 minutes, -1 = disabled)
+      const timeout = getCliTimeout();
       const config = vscode.workspace.getConfiguration('pagemd');
-      const timeout = config.get<number>('previewTimeout', 30000);
 
       // Check if document is untitled or has unsaved changes
       const doc = vscode.workspace.textDocuments.find(
@@ -541,6 +543,11 @@ export class PreviewPanel {
       <span class="zoom-separator"></span>
       <button class="fit-btn" id="fit-width-btn" title="Fit to Width">Fit</button>
       <button class="fit-btn" id="reset-zoom-btn" title="Reset Zoom (Ctrl+0)">100%</button>
+      <span class="zoom-separator"></span>
+      <button class="page-nav-btn" id="prev-page-btn" title="Previous Page (Page Up)">◀</button>
+      <input class="page-input" id="page-input" type="text" title="Go to page" value="1" />
+      <span class="page-total" id="page-total">/ 0</span>
+      <button class="page-nav-btn" id="next-page-btn" title="Next Page (Page Down)">▶</button>
       <span class="zoom-separator"></span>
       <button class="mode-btn" id="hand-tool-btn" title="Hand Tool (H) - Click and drag to pan">✋</button>
       <button class="mode-btn" id="book-toggle-btn" title="Toggle Book Spread (2-column)">📖</button>
