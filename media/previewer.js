@@ -71,6 +71,9 @@ if (!window.PagedConfig.after) {
     }
 
     notifyRendered();
+
+    // Dispatch event for zoom-toolbar.js page observer and UI state restoration
+    window.dispatchEvent(new CustomEvent('pagedjs-complete'));
   };
 }
 
