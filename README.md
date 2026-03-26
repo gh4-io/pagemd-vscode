@@ -216,7 +216,7 @@ Or manually edit `settings.json` and remove all `pagemd.*` entries.
 | Setting | Default | Description |
 |---------|---------|-------------|
 | `pagemd.jpegQuality` | `90` | JPEG quality for image exports (1-100) |
-| `pagemd.pdfTimeout` | `60000` | PDF generation timeout in milliseconds |
+| `pagemd.cliTimeout` | `300000` | CLI process timeout in milliseconds (5 min). Set to -1 to disable. |
 | `pagemd.headless` | `true` | Run browser in headless mode (false = browser stays open for inspection) |
 | `pagemd.pagedJsMode` | `browser` | Paged.js execution mode: `browser` or `cli` |
 
@@ -346,8 +346,10 @@ pagemd --version  # Should output version
 
 **Solution:** Increase timeout in settings:
 ```json
-"pagemd.pdfTimeout": 120000  // 2 minutes
+"pagemd.cliTimeout": 600000  // 10 minutes
 ```
+
+For very large documents, you can also set `pagedjs_timeout` in frontmatter to control the Paged.js rendering timeout (in milliseconds), or set to `-1` to disable.
 
 ### Browser Rendering Issues
 

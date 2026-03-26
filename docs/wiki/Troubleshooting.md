@@ -633,19 +633,24 @@ Use inline styles on the element instead of CSS classes:
 
 **Solutions:**
 
-1. **Increase timeout:**
+1. **Increase VS Code extension timeout:**
 
-   For PDF export:
    ```json
-   "pagemd.pdfTimeout": 120000  // 2 minutes
+   "pagemd.cliTimeout": 600000  // 10 minutes
    ```
 
-   For preview panel:
-   ```json
-   "pagemd.previewTimeout": 120000  // 2 minutes
+   This controls how long the extension waits for the CLI process. Set to `-1` to disable (CLI manages its own timeout).
+
+2. **Increase Paged.js render timeout (for very large documents):**
+
+   In your markdown frontmatter:
+   ```yaml
+   pagedjs_timeout: 600000  # 10 minutes in milliseconds
    ```
 
-2. **Simplify document** for testing
+   Or set `-1` to disable the Paged.js timeout entirely.
+
+3. **Simplify document** for testing
 
 3. **Check resources:** Large images can slow rendering
 

@@ -443,33 +443,23 @@ JPEG quality for image exports.
 
 ---
 
-### pagemd.pdfTimeout
+### pagemd.cliTimeout
 
 **Type:** `number` (milliseconds)
-**Default:** `30000`
-**Range:** `5000` - `300000`
+**Default:** `300000` (5 minutes)
+**Range:** `-1` (disabled) to `3600000` (1 hour)
 
-PDF generation timeout (matches CLI default: 30 seconds). Increase for large or complex documents.
+CLI process timeout for PDF export and preview operations. Controls how long the extension waits for the CLI subprocess to complete.
 
-```json
-"pagemd.pdfTimeout": 60000
-```
-
----
-
-### pagemd.previewTimeout
-
-**Type:** `number` (milliseconds)
-**Default:** `30000`
-**Range:** `5000` - `300000`
-
-Preview generation timeout. Controls how long the preview panel waits for CLI to generate HTML before timing out. Increase for large or complex documents with many pages.
+**Special values:**
+- `0` - Use default (5 minutes)
+- `-1` - Disabled (CLI manages its own timeout via `pagedjs_timeout`)
 
 ```json
-"pagemd.previewTimeout": 60000
+"pagemd.cliTimeout": 600000  // 10 minutes
 ```
 
-**Note:** This is separate from `pagemd.pdfTimeout` which only affects PDF export operations.
+**Note:** For very large documents, you may also need to set `pagedjs_timeout` in your markdown frontmatter to control the internal Paged.js render timeout.
 
 ---
 
@@ -645,8 +635,7 @@ Extension internal logging level. Controls extension diagnostic messages in the 
 | `pagemd.browserPath` | string | `""` | Rendering |
 | `pagemd.keepBrowserAlive` | boolean | `false` | Rendering |
 | `pagemd.jpegQuality` | number | `90` | Export |
-| `pagemd.pdfTimeout` | number | `30000` | Export |
-| `pagemd.previewTimeout` | number | `30000` | Preview |
+| `pagemd.cliTimeout` | number | `300000` | Export/Preview |
 | `pagemd.pagedJsMode` | string | `"browser"` | Export |
 | `pagemd.headless` | boolean | `true` | Export |
 | `pagemd.cliDebugLevel` | string | `""` | Export |

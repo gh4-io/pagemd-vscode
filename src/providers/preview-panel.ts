@@ -1,8 +1,9 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { getNonce, getCspMetaTag, getThemeClass, getWebviewUri } from '../utils/webview-utils';
-import { runPageMD, buildCliEnv, getCliTimeout } from '../utils/cli-wrapper';
+import { runPageMD, CliConfig, CliResult, buildCliEnv, getCliTimeout } from '../utils/cli-wrapper';
 import { extractCleanMessage } from '../utils/cli-message-extractor';
+import { TimedProgressTracker, parseProgressStage } from '../utils/cli-progress-parser';
 import { ProfileState } from './profile-picker';
 import { log, logStructured } from '../extension';
 import { clearLogFile } from '../utils/file-logger';
@@ -216,6 +217,36 @@ export class PreviewPanel {
   }
 
   /**
+   * Run CLI with status bar progress indicator.
+   * Shows a spinner with timed stage messages in the VS Code status bar.
+   */
+  private async runWithProgress(config: CliConfig): Promise<CliResult> {
+    return vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: 'PageMD' },
+      async (progress) => {
+        const tracker = new TimedProgressTracker(
+          (msg) => progress.report({ message: msg }),
+          'preview'
+        );
+        tracker.start();
+        try {
+          return await runPageMD({
+            ...config,
+            onProgress: (line) => {
+              const stage = parseProgressStage(line);
+              if (stage) {
+                tracker.override(stage.message);
+              }
+            },
+          });
+        } finally {
+          tracker.stop();
+        }
+      }
+    );
+  }
+
+  /**
    * Refresh the preview content.
    */
   public async refresh(): Promise<void> {
@@ -277,7 +308,7 @@ export class PreviewPanel {
         if (profile) {
           args.push('-p', profile);
         }
-        const result = await runPageMD({
+        const result = await this.runWithProgress({
           args,
           cwd,
           timeout,
@@ -320,7 +351,7 @@ export class PreviewPanel {
         // Only suppress stdout when CLI logging is disabled
         // When cliLogLevel is set, user wants to see CLI logs (which go to stdout)
         const cliLogLevel = vscode.workspace.getConfiguration('pagemd').get<string>('cliLogLevel', '');
-        const result = await runPageMD({
+        const result = await this.runWithProgress({
           args: fileArgs,
           cwd,
           timeout,
@@ -537,18 +568,28 @@ export class PreviewPanel {
     // IMPORTANT: position:fixed must be inline - Paged.js strips it from stylesheets
     return `
     <div class="pagemd-zoom-toolbar" style="position: fixed; bottom: 20px; right: 20px;">
-      <button id="zoom-out-btn" title="Zoom Out (Ctrl+-)">−</button>
-      <span class="zoom-level" id="zoom-level">${zoom}%</span>
-      <button id="zoom-in-btn" title="Zoom In (Ctrl++)">+</button>
-      <span class="zoom-separator"></span>
-      <button class="fit-btn" id="fit-width-btn" title="Fit to Width">Fit</button>
-      <button class="fit-btn" id="reset-zoom-btn" title="Reset Zoom (Ctrl+0)">100%</button>
-      <span class="zoom-separator"></span>
-      <button class="page-nav-btn" id="prev-page-btn" title="Previous Page (Page Up)">◀</button>
-      <input class="page-input" id="page-input" type="text" title="Go to page" value="1" />
-      <span class="page-total" id="page-total">/ 0</span>
-      <button class="page-nav-btn" id="next-page-btn" title="Next Page (Page Down)">▶</button>
-      <span class="zoom-separator"></span>
+      <span class="toolbar-group toolbar-group-zoom">
+        <button id="zoom-out-btn" title="Zoom Out (Ctrl+-)">−</button>
+        <span class="zoom-level" id="zoom-level">${zoom}%</span>
+        <button id="zoom-in-btn" title="Zoom In (Ctrl++)">+</button>
+        <span class="zoom-separator"></span>
+      </span>
+      <span class="toolbar-group toolbar-group-fit">
+        <button class="fit-btn" id="fit-width-btn" title="Fit to Width">Fit</button>
+        <button class="fit-btn" id="reset-zoom-btn" title="Reset Zoom (Ctrl+0)">100%</button>
+        <span class="zoom-separator"></span>
+      </span>
+      <span class="toolbar-group toolbar-group-page-nav">
+        <button class="page-nav-btn" id="prev-page-btn" title="Previous Page (Page Up)">◀</button>
+      </span>
+      <span class="toolbar-group toolbar-group-page-num">
+        <input class="page-input" id="page-input" type="text" title="Go to page" value="1" />
+        <span class="page-total" id="page-total">/ 0</span>
+      </span>
+      <span class="toolbar-group toolbar-group-page-nav">
+        <button class="page-nav-btn" id="next-page-btn" title="Next Page (Page Down)">▶</button>
+        <span class="zoom-separator"></span>
+      </span>
       <button class="mode-btn" id="hand-tool-btn" title="Hand Tool (H) - Click and drag to pan">✋</button>
       <button class="mode-btn" id="book-toggle-btn" title="Toggle Book Spread (2-column)">📖</button>
       <button class="mode-btn" id="view-toggle-btn" title="Toggle View (Paged/Browser)">🌐</button>

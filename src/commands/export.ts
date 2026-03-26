@@ -1,11 +1,13 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { runPageMD, CliResult, buildCliEnv } from '../utils/cli-wrapper';
+import { runPageMD, CliResult, buildCliEnv, getCliTimeout } from '../utils/cli-wrapper';
 import { extractCleanMessage } from '../utils/cli-message-extractor';
+import { TimedProgressTracker, parseProgressStage } from '../utils/cli-progress-parser';
 import { ProfileState } from '../providers/profile-picker';
 import { FormatState } from '../providers/format-state';
 import { OutputPathState } from '../providers/output-path-state';
 import { logStructured } from '../extension';
+import { clearLogFile } from '../utils/file-logger';
 
 /**
  * Export format definition for QuickPick
@@ -58,6 +60,8 @@ export async function exportAs(
   formatState?: FormatState,
   outputPathState?: OutputPathState
 ): Promise<void> {
+  clearLogFile(); // Clear log at start of new operation
+
   // Get active editor
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
@@ -120,6 +124,8 @@ export async function exportDocument(
   profileState: ProfileState,
   outputPathState?: OutputPathState
 ): Promise<void> {
+  clearLogFile(); // Clear log at start of new operation
+
   const filePath = document.uri.fsPath;
   const fileName = path.basename(filePath);
   const cwd = path.dirname(filePath);
@@ -130,7 +136,7 @@ export async function exportDocument(
   const cliLogLevel = config.get<string>('cliLogLevel', '');
   const showOutputPanelOn = config.get<string>('showOutputPanelOn', 'onError');
   const jpegQuality = config.get<number>('jpegQuality', 90);
-  const pdfTimeout = config.get<number>('pdfTimeout', 30000); // CLI default: 30000
+  const cliTimeout = getCliTimeout();
   const pagedJsMode = config.get<string>('pagedJsMode', 'browser');
 
   // Get output path from state (respects session override) or setting
@@ -178,14 +184,30 @@ export async function exportDocument(
         cancellable: true,
       },
       async (progress, token) => {
-        return runPageMD({
-          args,
-          cwd,
-          timeout: pdfTimeout,
-          token,
-          outputChannel,
-          env: cliEnv,
-        });
+        const preset = format.id === 'pdf' ? 'export-pdf' : 'export-html';
+        const tracker = new TimedProgressTracker(
+          (msg) => progress.report({ message: msg }),
+          preset
+        );
+        tracker.start();
+        try {
+          return await runPageMD({
+            args,
+            cwd,
+            timeout: cliTimeout,
+            token,
+            outputChannel,
+            env: cliEnv,
+            onProgress: (line) => {
+              const stage = parseProgressStage(line);
+              if (stage) {
+                tracker.override(stage.message);
+              }
+            },
+          });
+        } finally {
+          tracker.stop();
+        }
       }
     );
 
@@ -267,6 +289,8 @@ export async function exportAll(
   formatState: FormatState,
   outputPathState?: OutputPathState
 ): Promise<void> {
+  clearLogFile(); // Clear log at start of new operation
+
   // Get active editor
   const editor = vscode.window.activeTextEditor;
   if (!editor) {
@@ -307,7 +331,7 @@ export async function exportAll(
   const cliLogLevel = config.get<string>('cliLogLevel', '');
   const showOutputPanelOn = config.get<string>('showOutputPanelOn', 'onError');
   const jpegQuality = config.get<number>('jpegQuality', 90);
-  const pdfTimeout = config.get<number>('pdfTimeout', 30000);
+  const cliTimeout = getCliTimeout();
   const pagedJsMode = config.get<string>('pagedJsMode', 'browser');
 
   // Get output path from state (respects session override) or setting
@@ -359,14 +383,30 @@ export async function exportAll(
         cancellable: true,
       },
       async (progress, token) => {
-        return runPageMD({
-          args,
-          cwd,
-          timeout: pdfTimeout,
-          token,
-          outputChannel,
-          env: cliEnv,
-        });
+        const preset = formatIds.includes('pdf') ? 'export-pdf' : 'export-html';
+        const tracker = new TimedProgressTracker(
+          (msg) => progress.report({ message: msg }),
+          preset
+        );
+        tracker.start();
+        try {
+          return await runPageMD({
+            args,
+            cwd,
+            timeout: cliTimeout,
+            token,
+            outputChannel,
+            env: cliEnv,
+            onProgress: (line) => {
+              const stage = parseProgressStage(line);
+              if (stage) {
+                tracker.override(stage.message);
+              }
+            },
+          });
+        } finally {
+          tracker.stop();
+        }
       }
     );
 

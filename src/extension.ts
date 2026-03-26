@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
-import { execSync } from 'child_process';
+import { execFileSync } from 'child_process';
 import { exportPdf } from './commands/export-pdf';
 import { exportAs as exportAsCmd, exportAll as exportAllCmd } from './commands/export';
 import { bundleExport as bundleExportCmd } from './commands/bundle-export';
@@ -23,6 +23,12 @@ import { ProfileState } from './providers/profile-picker';
 import { FormatState, showFormatPicker } from './providers/format-state';
 import { OutputPathState } from './providers/output-path-state';
 import { PreviewPanel } from './providers/preview-panel';
+import {
+  initFileLogger,
+  closeFileLogger,
+  writeToLogFile,
+  onSettingsChange as onFileLoggerSettingsChange
+} from './utils/file-logger';
 
 /**
  * PageMD VS Code Extension
@@ -47,6 +53,19 @@ export function activate(context: vscode.ExtensionContext): void {
   // Create output channel for logging
   outputChannel = vscode.window.createOutputChannel('PageMD');
   context.subscriptions.push(outputChannel);
+
+  // Initialize file logger (if enabled via settings)
+  initFileLogger();
+
+  // Listen for settings changes to reinitialize file logger
+  context.subscriptions.push(
+    vscode.workspace.onDidChangeConfiguration((e) => {
+      if (e.affectsConfiguration('pagemd.logToFile') ||
+          e.affectsConfiguration('pagemd.logFilePath')) {
+        onFileLoggerSettingsChange();
+      }
+    })
+  );
 
   log('PageMD extension activated');
 
@@ -158,6 +177,7 @@ export function activate(context: vscode.ExtensionContext): void {
  */
 export function deactivate(): void {
   log('PageMD extension deactivated');
+  closeFileLogger();
 }
 
 // =============================================================================
@@ -234,7 +254,9 @@ function formatTimestamp(): string {
  */
 function log(message: string): void {
   const timestamp = formatTimestamp();
-  outputChannel.appendLine(`${timestamp} [PageMD-Ext] ${message}`);
+  const line = `${timestamp} [PageMD-Ext] ${message}`;
+  outputChannel.appendLine(line);
+  writeToLogFile(line);
 }
 
 /**
@@ -276,7 +298,9 @@ function logStructured(
     payload = `${result}:`;
   }
 
-  outputChannel.appendLine(payload ? `${metadata} ${payload}` : metadata);
+  const line = payload ? `${metadata} ${payload}` : metadata;
+  outputChannel.appendLine(line);
+  writeToLogFile(line);
 }
 
 // Export for use in other extension files
@@ -303,17 +327,20 @@ function detectChrome(): string | null {
       path.join(os.homedir(), 'Applications/Google Chrome.app/Contents/MacOS/Google Chrome'),
     );
   } else if (platform === 'linux') {
-    // Try 'which' command first
-    try {
-      const result = execSync('which google-chrome || which google-chrome-stable || which chromium || which chromium-browser', {
-        encoding: 'utf8',
-        stdio: ['pipe', 'pipe', 'ignore'],
-      }).trim();
-      if (result) {
-        return result;
+    // Try 'which' command for each browser (without shell to avoid DEP0190 warning)
+    const browsers = ['google-chrome', 'google-chrome-stable', 'chromium', 'chromium-browser'];
+    for (const browser of browsers) {
+      try {
+        const result = execFileSync('which', [browser], {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'ignore'],
+        }).trim();
+        if (result) {
+          return result;
+        }
+      } catch {
+        // 'which' failed for this browser, try next
       }
-    } catch {
-      // 'which' failed, try static paths
     }
     chromePaths.push(
       '/usr/bin/google-chrome',

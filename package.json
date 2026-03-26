@@ -2,7 +2,7 @@
   "name": "pagemd",
   "displayName": "PageMD",
   "description": "Markdown to PDF with Paged.js - paged preview and export",
-  "version": "0.0.1-rc1",
+  "version": "0.0.1-rc2",
   "publisher": "gh4-io",
   "license": "MIT",
   "repository": {
@@ -283,19 +283,12 @@
             "maximum": 100,
             "description": "JPEG quality for image exports (1-100)"
           },
-          "pagemd.pdfTimeout": {
+          "pagemd.cliTimeout": {
             "type": "number",
-            "default": 30000,
-            "minimum": 5000,
-            "maximum": 300000,
-            "description": "PDF generation timeout in milliseconds (matches CLI default: 30000)"
-          },
-          "pagemd.previewTimeout": {
-            "type": "number",
-            "default": 30000,
-            "minimum": 5000,
-            "maximum": 300000,
-            "description": "Preview generation timeout in milliseconds (5000-300000)"
+            "default": 300000,
+            "minimum": -1,
+            "maximum": 3600000,
+            "description": "CLI process timeout in milliseconds. Default: 300000 (5 minutes). Set to -1 to disable. Applies to PDF export and preview."
           },
           "pagemd.pagedJsMode": {
             "type": "string",
@@ -337,6 +330,16 @@
               "All trace logs including verbose details"
             ],
             "description": "Extension internal logging level. Controls extension diagnostics in PageMD output channel."
+          },
+          "pagemd.logToFile": {
+            "type": "boolean",
+            "default": false,
+            "description": "Also write all PageMD logs to a file for debugging purposes"
+          },
+          "pagemd.logFilePath": {
+            "type": "string",
+            "default": "",
+            "description": "Path to log file. Leave empty for default (pagemd.log in workspace root or temp directory)"
           }
         }
       }

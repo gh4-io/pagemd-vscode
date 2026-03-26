@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { ProfileState } from '../providers/profile-picker';
 import { exportDocument, EXPORT_FORMATS } from './export';
+import { clearLogFile } from '../utils/file-logger';
 
 /**
  * Export the active markdown file to PDF.
@@ -12,6 +13,8 @@ export async function exportPdf(
   outputChannel: vscode.OutputChannel,
   profileState: ProfileState
 ): Promise<void> {
+  clearLogFile(); // Clear log at start of new operation
+
   // Get active editor
   const editor = vscode.window.activeTextEditor;
   if (!editor) {

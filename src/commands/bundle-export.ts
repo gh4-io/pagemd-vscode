@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { runPageMD, CliResult, buildCliEnv } from '../utils/cli-wrapper';
+import { runPageMD, CliResult, buildCliEnv, getCliTimeout } from '../utils/cli-wrapper';
 import { extractCleanMessage } from '../utils/cli-message-extractor';
+import { TimedProgressTracker, parseProgressStage } from '../utils/cli-progress-parser';
 import { ProfileState } from '../providers/profile-picker';
 import { logStructured } from '../extension';
+import { clearLogFile } from '../utils/file-logger';
 
 /**
  * Bundle Export Command
@@ -20,6 +22,8 @@ export async function bundleExport(
   profileState: ProfileState,
   uri?: vscode.Uri
 ): Promise<void> {
+  clearLogFile(); // Clear log at start of new operation
+
   // Get active editor or use provided URI
   const editor = vscode.window.activeTextEditor;
   const filePath = uri?.fsPath || editor?.document.uri.fsPath;
@@ -69,7 +73,7 @@ export async function bundleExport(
   const config = vscode.workspace.getConfiguration('pagemd');
   const cliLogLevel = config.get<string>('cliLogLevel', '');
   const showOutputPanelOn = config.get<string>('showOutputPanelOn', 'onError');
-  const pdfTimeout = config.get<number>('pdfTimeout', 30000);
+  const cliTimeout = getCliTimeout();
 
   // Build environment variables from settings
   const cliEnv = buildCliEnv();
@@ -105,14 +109,29 @@ export async function bundleExport(
         cancellable: true,
       },
       async (progress, token) => {
-        return runPageMD({
-          args,
-          cwd,
-          timeout: pdfTimeout,
-          token,
-          outputChannel,
-          env: cliEnv,
-        });
+        const tracker = new TimedProgressTracker(
+          (msg) => progress.report({ message: msg }),
+          'bundle-html'
+        );
+        tracker.start();
+        try {
+          return await runPageMD({
+            args,
+            cwd,
+            timeout: cliTimeout,
+            token,
+            outputChannel,
+            env: cliEnv,
+            onProgress: (line) => {
+              const stage = parseProgressStage(line);
+              if (stage) {
+                tracker.override(stage.message);
+              }
+            },
+          });
+        } finally {
+          tracker.stop();
+        }
       }
     );
 

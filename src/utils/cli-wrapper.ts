@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
 import { logStructured } from '../extension';
+import { writeToLogFile } from './file-logger';
 
 /**
  * Result from CLI command execution
@@ -29,6 +30,31 @@ export interface CliConfig {
   stdin?: string;
   /** Suppress stdout from output channel (e.g., when stdout contains HTML) */
   suppressStdout?: boolean;
+  /** Callback for line-by-line CLI output (for progress tracking) */
+  onProgress?: (line: string, stream: 'stdout' | 'stderr') => void;
+}
+
+/** Default CLI timeout: 5 minutes */
+const DEFAULT_CLI_TIMEOUT = 300000;
+
+/**
+ * Get CLI timeout from settings.
+ * Special values:
+ * - 0: Use default (300000ms / 5 minutes)
+ * - -1: Disabled (no timeout)
+ * - positive: Use as-is
+ */
+export function getCliTimeout(): number {
+  const config = vscode.workspace.getConfiguration('pagemd');
+  const setting = config.get<number>('cliTimeout', DEFAULT_CLI_TIMEOUT);
+
+  if (setting === 0) {
+    return DEFAULT_CLI_TIMEOUT;
+  }
+  if (setting < 0) {
+    return 0; // cli-wrapper interprets 0 as no timeout
+  }
+  return setting;
 }
 
 /**
@@ -122,8 +148,10 @@ function resolveCliPath(outputChannel?: vscode.OutputChannel): { command: string
  * - PAGEMD_KEEP_CHROME: false (disabled)
  * - PAGEMD_HEADLESS: true (enabled)
  * - PAGEMD_PAGEDJS_MODE: 'browser'
- * - PAGEMD_TIMEOUT: 30000
  * - PAGEMD_JPEG_QUALITY: 90
+ *
+ * Note: Paged.js timeout is controlled via frontmatter (pagedjs_timeout) or profile (pagedjs.timeout),
+ * not via environment variable. Extension subprocess timeout is separate (pagemd.cliTimeout setting).
  */
 export function buildCliEnv(): Record<string, string> {
   const config = vscode.workspace.getConfiguration('pagemd');
@@ -173,11 +201,8 @@ export function buildCliEnv(): Record<string, string> {
     env.PAGEMD_PAGEDJS_MODE = pagedJsMode;
   }
 
-  // PDF timeout - only pass if not default 30000
-  const pdfTimeout = config.get<number>('pdfTimeout', 30000);
-  if (pdfTimeout !== 30000) {
-    env.PAGEMD_TIMEOUT = String(pdfTimeout);
-  }
+  // Note: CLI timeout (pagedjs_timeout) is controlled via frontmatter/profile, not env var
+  // Extension timeout (cliTimeout) is separate - controls subprocess wait time
 
   // JPEG quality - only pass if not default 90
   const jpegQuality = config.get<number>('jpegQuality', 90);
@@ -196,7 +221,7 @@ export function buildCliEnv(): Record<string, string> {
  * Supports timeout and VS Code CancellationToken.
  */
 export function runPageMD(config: CliConfig): Promise<CliResult> {
-  const { args, cwd, timeout = 30000, token, outputChannel, env: customEnv, stdin: stdinContent, suppressStdout = false } = config;
+  const { args, cwd, timeout = 30000, token, outputChannel, env: customEnv, stdin: stdinContent, suppressStdout = false, onProgress } = config;
 
   return new Promise((resolve, reject) => {
     let stdout = '';
@@ -260,6 +285,13 @@ export function runPageMD(config: CliConfig): Promise<CliResult> {
       if (!suppressStdout) {
         outputChannel?.append(text);
       }
+      // Write to log file and fire progress callback (split by lines for proper formatting)
+      for (const line of text.split('\n')) {
+        if (line.trim()) {
+          writeToLogFile(line);
+          onProgress?.(line, 'stdout');
+        }
+      }
     });
 
     // Stream stderr
@@ -267,6 +299,13 @@ export function runPageMD(config: CliConfig): Promise<CliResult> {
       const text = data.toString();
       stderr += text;
       outputChannel?.append(text);
+      // Write to log file and fire progress callback (split by lines for proper formatting)
+      for (const line of text.split('\n')) {
+        if (line.trim()) {
+          writeToLogFile(line);
+          onProgress?.(line, 'stderr');
+        }
+      }
     });
 
     // Handle spawn errors

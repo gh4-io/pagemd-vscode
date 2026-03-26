@@ -154,6 +154,27 @@
   white-space: nowrap;
   user-select: none;
 }
+/* Toolbar groups: flex containers matching parent gap */
+.pagemd-zoom-toolbar .toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Responsive toolbar: progressive collapse */
+@media (max-width: 540px) {
+  .pagemd-zoom-toolbar .toolbar-group-zoom { display: none; }
+}
+@media (max-width: 440px) {
+  .pagemd-zoom-toolbar .toolbar-group-fit { display: none; }
+}
+@media (max-width: 360px) {
+  .pagemd-zoom-toolbar .toolbar-group-page-num { display: none; }
+}
+@media (max-width: 300px) {
+  .pagemd-zoom-toolbar .toolbar-group-page-nav { display: none; }
+}
+
 /* Hand tool cursor states */
 body.hand-mode {
   cursor: grab;

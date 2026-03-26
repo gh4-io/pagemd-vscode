@@ -465,9 +465,13 @@ To change a default:
 1. Use `onSave` instead of `onType` refresh
 2. Increase timeout if rendering is slow:
    ```json
-   "pagemd.pdfTimeout": 120000
+   "pagemd.cliTimeout": 600000  // 10 minutes
    ```
-3. Use browser view without Paged.js for fastest content checks
+3. For very large documents, set `pagedjs_timeout` in frontmatter:
+   ```yaml
+   pagedjs_timeout: 600000  # 10 minutes
+   ```
+4. Use browser view without Paged.js for fastest content checks
 
 ### For Complex Layouts
 
