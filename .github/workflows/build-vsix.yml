@@ -136,7 +136,7 @@ jobs:
         if: steps.pagemd_ref.outputs.source == 'own-release'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.artifact.outputs.path }}" --clobber
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.artifact.outputs.path }}" --repo gh4-io/pagemd-vscode --clobber
 
       - name: Upload as workflow artifact (dispatch-triggered build)
         if: steps.pagemd_ref.outputs.source == 'dispatch'
