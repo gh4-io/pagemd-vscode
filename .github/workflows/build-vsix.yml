@@ -1,0 +1,147 @@
+name: Build Windows VSIX
+
+# Builds the combined VSIX (this extension + the bundled PageMD CLI) on
+# windows-latest. Two independent triggers:
+#
+#   1. release (this repo's own release) - build against whatever pagemd
+#      release is currently newest.
+#   2. repository_dispatch "pagemd-released" (sent by pagemd's own workflow,
+#      see gh4-io/pagemd/.github/workflows/notify-vscode-release.yml) -
+#      build against the exact pagemd tag named in the payload, using this
+#      repo's current default-branch (alpha) code as-is.
+#
+# pagemd is not a git submodule of this repo - it is checked out as a
+# sibling folder in the same job, which is all scripts/bundle-cli-esbuild.js
+# actually needs (it locates pagemd purely by relative filesystem path).
+#
+# Versions are logged and compared but NEVER block the build: the entire
+# point of the pagemd-release trigger is picking up new CLI code
+# automatically even when this extension's own package.json version hasn't
+# been bumped to match. When versions don't match, or when there's no
+# pagemd-vscode release to attach the file to (dispatch-triggered runs),
+# the artifact gets a build-identifying suffix and is uploaded as a
+# workflow-run artifact instead of a release asset.
+
+on:
+  release:
+    types: [created]
+  repository_dispatch:
+    types: [pagemd-released]
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows-vsix:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Resolve which pagemd tag to build against
+        id: pagemd_ref
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            tag="${{ github.event.client_payload.tag }}"
+            source="dispatch"
+          else
+            tag=$(gh release list --repo gh4-io/pagemd --limit 1 --json tagName -q '.[0].tagName')
+            source="own-release"
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::Could not resolve a pagemd tag to build against."
+            exit 1
+          fi
+          echo "Building against pagemd@${tag} (trigger: ${source})"
+          echo "tag=${tag}" >> "$GITHUB_OUTPUT"
+          echo "source=${source}" >> "$GITHUB_OUTPUT"
+
+      # No ref override needed: for a "release" event github.ref already
+      # points at this repo's own release tag; for repository_dispatch it
+      # points at the default branch (alpha). Both are what we want.
+      - name: Check out pagemd-vscode
+        uses: actions/checkout@v4
+        with:
+          path: pagemd-vscode
+
+      - name: Check out pagemd at resolved tag
+        uses: actions/checkout@v4
+        with:
+          repository: gh4-io/pagemd
+          ref: ${{ steps.pagemd_ref.outputs.tag }}
+          path: pagemd
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Compare versions (informational only, never fails the build)
+        id: versions
+        run: |
+          set -euo pipefail
+          cli_version=$(node -p "require('./pagemd/apps/cli/package.json').version")
+          ext_version=$(node -p "require('./pagemd-vscode/package.json').version")
+          echo "pagemd (@pagemd/cli) version: $cli_version"
+          echo "pagemd-vscode version:        $ext_version"
+          echo "cli_version=${cli_version}" >> "$GITHUB_OUTPUT"
+          echo "ext_version=${ext_version}" >> "$GITHUB_OUTPUT"
+          if [ "$cli_version" != "$ext_version" ]; then
+            echo "::warning::Version mismatch - @pagemd/cli is ${cli_version} but pagemd-vscode is ${ext_version}. Proceeding anyway; artifact will get a build-identifying suffix instead of a clean version-tagged name."
+            echo "matched=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "matched=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      # pagemd's own node_modules must exist before bundling: esbuild inlines
+      # workspace packages (@pagemd/*) and their runtime deps straight out of
+      # node_modules, and scripts/bundle-cli-esbuild.js reads
+      # node_modules/pagedjs directly to copy the paged.polyfill.js runtime.
+      - name: Install PageMD CLI dependencies
+        working-directory: pagemd
+        run: npm ci
+
+      - name: Install PageMD VS Code extension dependencies
+        working-directory: pagemd-vscode
+        run: npm ci
+
+      # "npm run package" == "vsce package", which itself invokes this
+      # repo's "vscode:prepublish" script first (bundle-cli:prod -> bin/ npm
+      # install --omit=dev -> bundle:prod) before zipping the VSIX.
+      - name: Build combined VSIX
+        working-directory: pagemd-vscode
+        run: npm run package
+
+      - name: Name build artifact
+        id: artifact
+        working-directory: pagemd-vscode
+        run: |
+          set -euo pipefail
+          vsix_file=$(ls -1 ./*.vsix | head -n 1)
+          if [ "${{ steps.pagemd_ref.outputs.source }}" = "own-release" ] && [ "${{ steps.versions.outputs.matched }}" = "true" ]; then
+            target="pagemd-${{ github.event.release.tag_name }}-windows.vsix"
+          else
+            build_id="$(date -u +%Y%m%d)-${{ github.run_number }}"
+            target="pagemd-ext${{ steps.versions.outputs.ext_version }}-cli${{ steps.pagemd_ref.outputs.tag }}-build.${build_id}-windows.vsix"
+          fi
+          mv "$vsix_file" "$target"
+          echo "Artifact: ${target}"
+          echo "path=pagemd-vscode/${target}" >> "$GITHUB_OUTPUT"
+          echo "name=${target}" >> "$GITHUB_OUTPUT"
+
+      - name: Upload as release asset (own release only)
+        if: steps.pagemd_ref.outputs.source == 'own-release'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "${{ github.event.release.tag_name }}" "${{ steps.artifact.outputs.path }}" --clobber
+
+      - name: Upload as workflow artifact (dispatch-triggered build)
+        if: steps.pagemd_ref.outputs.source == 'dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.artifact.outputs.name }}
+          path: ${{ steps.artifact.outputs.path }}
+          retention-days: 30
